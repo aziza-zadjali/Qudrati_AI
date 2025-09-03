@@ -84,7 +84,7 @@ if 'bulk_generation' not in st.session_state:
 try:
     from openai import OpenAI
     
-    api_key = st.secrets.get("OPENAI_API_KEY", "")
+    api_key = st.secrets.get("openai", "")
     if api_key:
         client = OpenAI(api_key=api_key)
     else:
