@@ -89,6 +89,7 @@ try:
 except ImportError:
     openai = None
 
+
 def call_openai(prompt, max_tokens=200):
     """Call OpenAI API if available"""
     if not openai:
