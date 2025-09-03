@@ -126,28 +126,6 @@ def call_openai(prompt, max_tokens=200):
         return ""
 
 
-
-
-
-
-def call_openai(prompt, max_tokens=200):
-    """Call OpenAI API if available"""
-    if not client:
-        return ""
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # or gpt-4o for higher quality
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        st.warning(f"OpenAI API Error: {e}")
-        return ""
-
-
 def randomize_choices(correct_choice, distractors):
     """Randomize the order of choices and return shuffled choices with correct answer info"""
     all_choices = [correct_choice] + distractors[:3]  # Ensure we have exactly 4
