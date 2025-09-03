@@ -80,9 +80,9 @@ if 'generated_questions' not in st.session_state:
 if 'bulk_generation' not in st.session_state:
     st.session_state.bulk_generation = False
 
-import os
-
+# ---------------------------
 # OpenAI integration (Streamlit Cloud compatible)
+# ---------------------------
 try:
     from openai import OpenAI
 except ImportError:
@@ -125,7 +125,9 @@ def call_openai(prompt, max_tokens=200):
         st.warning(f"OpenAI API Error: {e}")
         return ""
 
-
+# ---------------------------
+# Question generation helpers
+# ---------------------------
 def randomize_choices(correct_choice, distractors):
     """Randomize the order of choices and return shuffled choices with correct answer info"""
     all_choices = [correct_choice] + distractors[:3]  # Ensure we have exactly 4
@@ -134,13 +136,11 @@ def randomize_choices(correct_choice, distractors):
     random.shuffle(all_choices)
     
     # Find the new position of the correct answer
-    correct_index = all_choices.index(correct_choice)
-    
+    # (We keep the actual correct text as the answer key)
     return all_choices, correct_choice
 
 def get_random_arabic_word(difficulty="متوسط"):
     """Get a random Arabic word based on difficulty level"""
-    
     word_banks = {
         "سهل": [
             "الحب", "البيت", "الماء", "النور", "السلام", "الأمل", "الخير", "الصدق",
@@ -157,14 +157,12 @@ def get_random_arabic_word(difficulty="متوسط"):
             "المصداقية", "الموضوعية", "التحليل", "الاستنباط", "التجريد", "التركيب"
         ]
     }
-    
     words = word_banks.get(difficulty, word_banks["متوسط"])
     return random.choice(words)
 
 # Arabic question generators
 def generate_word_meaning_question(main_word=None, difficulty="متوسط"):
     """Generate Arabic word meaning MCQ with randomized choices"""
-    
     # Auto-select word if not provided
     if not main_word:
         main_word = get_random_arabic_word(difficulty)
@@ -180,7 +178,6 @@ def generate_word_meaning_question(main_word=None, difficulty="متوسط"):
 
 أعط الإجابة الصحيحة أولاً، ثم 3 إجابات خاطئة، كل كلمة في سطر منفصل:
 """
-    
     gpt_response = call_openai(prompt)
     
     if gpt_response:
@@ -221,7 +218,6 @@ def generate_word_meaning_question(main_word=None, difficulty="متوسط"):
             "التطوير": ["التحسين", "الإهمال", "التدهور", "التراجع"],
             "التقدم": ["النمو", "التأخر", "الانتكاس", "الجمود"]
         }
-        
         if main_word in fallbacks:
             correct_choice = fallbacks[main_word][0]
             distractors = fallbacks[main_word][1:4]
@@ -240,7 +236,6 @@ def generate_word_meaning_question(main_word=None, difficulty="متوسط"):
 
 def generate_quantitative_comparison_question(difficulty="متوسط"):
     """Generate quantitative comparison question"""
-    
     if difficulty == "سهل":
         a, b = random.randint(1, 10), random.randint(1, 10)
         expr_a = f"{a} + {b}"
@@ -290,7 +285,6 @@ def generate_quantitative_comparison_question(difficulty="متوسط"):
 
 def generate_number_sequence_question(difficulty="متوسط"):
     """Generate number sequence question"""
-    
     def to_arabic_numerals(num):
         arabic_digits = "٠١٢٣٤٥٦٧٨٩"
         english_digits = "0123456789"
@@ -351,12 +345,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# OpenAI status
-if openai and openai.api_key:
+# OpenAI status (updated to use `client`)
+if client:
     st.success("🟢 OpenAI API متصل ويعمل")
 else:
     st.warning("🟡 OpenAI API غير متصل - سيتم استخدام البيانات التجريبية")
-
 
 # Generation interface
 col1, col2 = st.columns([2, 1])
@@ -430,7 +423,6 @@ with col2:
 # Generate button
 button_text = f"🚀 توليد {'الأسئلة' if generation_mode == 'توليد متعدد' else 'السؤال'}"
 if st.button(button_text, type="primary", use_container_width=True):
-    
     # Clear previous questions
     st.session_state.generated_questions = []
     
@@ -563,7 +555,6 @@ if st.session_state.generated_questions:
     with col2:
         if st.button(f"💾 حفظ جميع الأسئلة في قاعدة البيانات ({len(st.session_state.generated_questions)})", 
                      type="primary", use_container_width=True):
-            
             db = load_db()
             saved_count = 0
             
@@ -581,7 +572,6 @@ if st.session_state.generated_questions:
                         "generated_at": datetime.now().isoformat(),
                         "generator": "ai_advanced_bulk"
                     }
-                    
                     db["questions"].append(new_question)
                     saved_count += 1
                 
@@ -686,3 +676,4 @@ with st.expander("📖 دليل الاستخدام المتقدم"):
     - 🔄 **الخيارات العشوائية**: تحسن من جودة التقييم
     - 💾 **الحفظ الجماعي**: يوفر الوقت والجهد
     """)
+
