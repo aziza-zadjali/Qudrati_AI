@@ -357,6 +357,7 @@ if openai and openai.api_key:
 else:
     st.warning("🟡 OpenAI API غير متصل - سيتم استخدام البيانات التجريبية")
 
+
 # Generation interface
 col1, col2 = st.columns([2, 1])
 
