@@ -92,6 +92,13 @@ try:
 except ImportError:
     client = None
 
+# Status check
+if client:
+    st.success("🟢 OpenAI API متصل ويعمل")
+else:
+    st.warning("🟡 OpenAI API غير متصل - سيتم استخدام البيانات التجريبية")
+
+
 
 
 
