@@ -1,7 +1,6 @@
 import streamlit as st
 import json
 from pathlib import Path
-import os
 
 # Page config
 st.set_page_config(
@@ -13,9 +12,9 @@ st.set_page_config(
 
 # Arabic RTL styling
 st.markdown("""
-&lt;style&gt;
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700&amp;display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&amp;display=swap');
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&display=swap');
 
 .main .block-container {
     direction: rtl;
@@ -65,7 +64,7 @@ st.markdown("""
     margin: 10px 0;
     border-right: 4px solid #1e3a8a;
 }
-&lt;/style&gt;
+</style>
 """, unsafe_allow_html=True)
 
 # Database helpers
@@ -88,41 +87,41 @@ def load_db():
 
 # Header
 st.markdown("""
-&lt;div class="main-title"&gt;
+<div class="main-title">
 🧠 منصة تقييم القدرات المعرفية
-&lt;br&gt;
-&lt;small style="font-size: 20px; color: #64748b;"&gt;وزارة العمل - سلطنة عُمان&lt;/small&gt;
-&lt;/div&gt;
+<br>
+<small style="font-size: 20px; color: #64748b;">وزارة العمل - سلطنة عُمان</small>
+</div>
 """, unsafe_allow_html=True)
 
 # Introduction
 st.markdown("""
-&lt;div style="background: #f0f9ff; padding: 25px; border-radius: 15px; border-right: 4px solid #0891b2; margin: 25px 0;"&gt;
-&lt;h3 style="color: #0c4a6e; margin-top: 0;"&gt;💡 نسخة تجريبية متقدمة&lt;/h3&gt;
-&lt;p style="font-size: 16px; line-height: 1.8; color: #075985;"&gt;
-هذه نسخة تجريبية شاملة من منصة تقييم القدرات المعرفية التي تتضمن &lt;strong&gt;مرحلتين متكاملتين&lt;/strong&gt;:
-&lt;/p&gt;
+<div style="background: #f0f9ff; padding: 25px; border-radius: 15px; border-right: 4px solid #0891b2; margin: 25px 0;">
+<h3 style="color: #0c4a6e; margin-top: 0;">💡 نسخة تجريبية متقدمة</h3>
+<p style="font-size: 16px; line-height: 1.8; color: #075985;">
+هذه نسخة تجريبية شاملة من منصة تقييم القدرات المعرفية التي تتضمن <strong>مرحلتين متكاملتين</strong>:
+</p>
 
-&lt;div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;"&gt;
-&lt;div style="background: #ecfdf5; padding: 20px; border-radius: 10px;"&gt;
-&lt;h4 style="color: #065f46; margin: 0 0 10px 0;"&gt;🎯 المرحلة الأولى: تطوير المحتوى&lt;/h4&gt;
-&lt;ul style="color: #047857; margin: 0;"&gt;
-&lt;li&gt;توليد الأسئلة بالذكاء الاصطناعي&lt;/li&gt;
-&lt;li&gt;مراجعة وموافقة الخبراء&lt;/li&gt;
-&lt;li&gt;تجميع الاختبارات&lt;/li&gt;
-&lt;/ul&gt;
-&lt;/div&gt;
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+<div style="background: #ecfdf5; padding: 20px; border-radius: 10px;">
+<h4 style="color: #065f46; margin: 0 0 10px 0;">🎯 المرحلة الأولى: تطوير المحتوى</h4>
+<ul style="color: #047857; margin: 0;">
+<li>توليد الأسئلة بالذكاء الاصطناعي</li>
+<li>مراجعة وموافقة الخبراء</li>
+<li>تجميع الاختبارات</li>
+</ul>
+</div>
 
-&lt;div style="background: #fef3c7; padding: 20px; border-radius: 10px;"&gt;
-&lt;h4 style="color: #92400e; margin: 0 0 10px 0;"&gt;🚀 المرحلة الثانية: التشغيل&lt;/h4&gt;
-&lt;ul style="color: #b45309; margin: 0;"&gt;
-&lt;li&gt;تقديم الاختبارات للطلاب&lt;/li&gt;
-&lt;li&gt;التصحيح والمراجعة&lt;/li&gt;
-&lt;li&gt;التحليلات والتقارير&lt;/li&gt;
-&lt;/ul&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
+<div style="background: #fef3c7; padding: 20px; border-radius: 10px;">
+<h4 style="color: #92400e; margin: 0 0 10px 0;">🚀 المرحلة الثانية: التشغيل</h4>
+<ul style="color: #b45309; margin: 0;">
+<li>تقديم الاختبارات للطلاب</li>
+<li>التصحيح والمراجعة</li>
+<li>التحليلات والتقارير</li>
+</ul>
+</div>
+</div>
+</div>
 """, unsafe_allow_html=True)
 
 # Load and display metrics
@@ -173,41 +172,41 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("""
-    &lt;div class="feature-card"&gt;
-    &lt;h4 style="color: #065f46;"&gt;🤖 الذكاء الاصطناعي &lt;/h4&gt;
-    &lt;p style="color: #047857;"&gt;
-    • توليد أسئلة عالية الجودة باستخدام GPT-4&lt;br&gt;
-    • فلترة ذكية للمحتوى&lt;br&gt;
-    • نماذج احتياطية مفتوحة المصدر&lt;br&gt;
+    <div class="feature-card">
+    <h4 style="color: #065f46;">🤖 الذكاء الاصطناعي </h4>
+    <p style="color: #047857;">
+    • توليد أسئلة عالية الجودة باستخدام GPT-4<br>
+    • فلترة ذكية للمحتوى<br>
+    • نماذج احتياطية مفتوحة المصدر<br>
     • تحسين مستمر عبر التعلم الآلي
-    &lt;/p&gt;
-    &lt;/div&gt;
+    </p>
+    </div>
     """, unsafe_allow_html=True)
 
 with col2:
     st.markdown("""
-    &lt;div class="feature-card"&gt;
-    &lt;h4 style="color: #1e40af;"&gt;👨‍🏫 ضمان الجودة&lt;/h4&gt;
-    &lt;p style="color: #1d4ed8;"&gt;
-    • مراجعة شاملة من خبراء المادة&lt;br&gt;
-    • تدفق موافقة متعدد المراحل&lt;br&gt;
-    • معايير جودة صارمة&lt;br&gt;
+    <div class="feature-card">
+    <h4 style="color: #1e40af;">👨‍🏫 ضمان الجودة</h4>
+    <p style="color: #1d4ed8;">
+    • مراجعة شاملة من خبراء المادة<br>
+    • تدفق موافقة متعدد المراحل<br>
+    • معايير جودة صارمة<br>
     • تتبع الأداء والتحسين
-    &lt;/p&gt;
-    &lt;/div&gt;
+    </p>
+    </div>
     """, unsafe_allow_html=True)
 
 with col3:
     st.markdown("""
-    &lt;div class="feature-card"&gt;
-    &lt;h4 style="color: #92400e;"&gt;🔒 الأمان والامتثال&lt;/h4&gt;
-    &lt;p style="color: #b45309;"&gt;
-    • نشر داخلي على خوادم الوزارة&lt;br&gt;
-    • تشفير شامل للبيانات&lt;br&gt;
-    • امتثال لمعايير الأمان الحكومية&lt;br&gt;
+    <div class="feature-card">
+    <h4 style="color: #92400e;">🔒 الأمان والامتثال</h4>
+    <p style="color: #b45309;">
+    • نشر داخلي على خوادم الوزارة<br>
+    • تشفير شامل للبيانات<br>
+    • امتثال لمعايير الأمان الحكومية<br>
     • تسجيل شامل للأنشطة
-    &lt;/p&gt;
-    &lt;/div&gt;
+    </p>
+    </div>
     """, unsafe_allow_html=True)
 
 # Technical specifications
@@ -237,39 +236,39 @@ with col2:
 st.markdown("### 📱 دليل الاستخدام")
 
 st.markdown("""
-&lt;div style="background: #f1f5f9; padding: 25px; border-radius: 12px; margin: 20px 0;"&gt;
-&lt;strong&gt;للاستفادة الكاملة من النسخة التجريبية:&lt;/strong&gt;&lt;br&gt;&lt;br&gt;
+<div style="background: #f1f5f9; padding: 25px; border-radius: 12px; margin: 20px 0;">
+<strong>للاستفادة الكاملة من النسخة التجريبية:</strong><br><br>
 
-&lt;div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;"&gt;
-&lt;div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #3b82f6;"&gt;
-&lt;strong&gt;1️⃣ توليد الأسئلة&lt;/strong&gt;&lt;br&gt;
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #3b82f6;">
+<strong>1️⃣ توليد الأسئلة</strong><br>
 استخدم الذكاء الاصطناعي لإنشاء أسئلة بـ 12 نوعاً مختلفاً
-&lt;/div&gt;
+</div>
 
-&lt;div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #16a34a;"&gt;
-&lt;strong&gt;2️⃣ مراجعة الخبراء&lt;/strong&gt;&lt;br&gt;
+<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #16a34a;">
+<strong>2️⃣ مراجعة الخبراء</strong><br>
 راجع واعتمد الأسئلة المولدة قبل الاستخدام
-&lt;/div&gt;
+</div>
 
-&lt;div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #ea580c;"&gt;
-&lt;strong&gt;3️⃣ تجميع الاختبارات&lt;/strong&gt;&lt;br&gt;
+<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #ea580c;">
+<strong>3️⃣ تجميع الاختبارات</strong><br>
 أنشئ اختبارات مخصصة من الأسئلة المعتمدة
-&lt;/div&gt;
+</div>
 
-&lt;div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #7c3aed;"&gt;
-&lt;strong&gt;4️⃣ تقديم الاختبار&lt;/strong&gt;&lt;br&gt;
+<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #7c3aed;">
+<strong>4️⃣ تقديم الاختبار</strong><br>
 جرب تجربة الطالب الكاملة مع التوقيت
-&lt;/div&gt;
+</div>
 
-&lt;div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #dc2626;"&gt;
-&lt;strong&gt;5️⃣ التحليلات&lt;/strong&gt;&lt;br&gt;
+<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #dc2626;">
+<strong>5️⃣ التحليلات</strong><br>
 استعرض التقارير والإحصائيات التفصيلية
-&lt;/div&gt;
-&lt;/div&gt;
+</div>
+</div>
 
-&lt;br&gt;
-&lt;strong&gt;💡 نصيحة:&lt;/strong&gt; ابدأ بتوليد بعض الأسئلة، ثم اعتمدها، وأنشئ اختباراً لرؤية التدفق الكامل في العمل.
-&lt;/div&gt;
+<br>
+<strong>💡 نصيحة:</strong> ابدأ بتوليد بعض الأسئلة، ثم اعتمدها، وأنشئ اختباراً لرؤية التدفق الكامل في العمل.
+</div>
 """, unsafe_allow_html=True)
 
 # System status
@@ -278,33 +277,15 @@ st.markdown("### 🔧 حالة النظام")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # Check OpenAI connectivity (more accurate message)
+    # Check OpenAI connectivity
     try:
-        # Try multiple locations for the key
-        key_candidates = []
-        # st.secrets["openai"]["api_key"]
-        try:
-            key_candidates.append(st.secrets["openai"]["api_key"])
-        except Exception:
-            pass
-        # st.secrets["OPENAI_API_KEY"]
-        key_candidates.append(st.secrets.get("OPENAI_API_KEY", ""))
-        # Environment variable
-        key_candidates.append(os.getenv("OPENAI_API_KEY", ""))
-
-        # Pick the first valid key
-        openai_key = next(
-            (k for k in key_candidates if k and k.strip() and k != "your_openai_api_key_here"),
-            ""
-        )
-
-        if openai_key:
-            masked = "****" + openai_key[-4:]
-            st.success(f"🟢 اتصال OpenAI: مفتاح مُكوَّن ({masked})")
+        openai_key = st.secrets.get("OPENAI_API_KEY")
+        if openai_key and openai_key != "your_openai_api_key_here":
+            st.success("🟢 اتصال OpenAI: متصل")
         else:
-            st.warning("🟡 اتصال OpenAI: غير مُكوَّن")
-    except Exception as e:
-        st.error(f"🔴 اتصال OpenAI: خطأ ({e})")
+            st.warning("🟡 اتصال OpenAI: غير مكون")
+    except:
+        st.warning("🟡 اتصال OpenAI: غير متاح")
 
 with col2:
     # Check database
@@ -321,9 +302,9 @@ with col3:
 # Footer
 st.markdown("---")
 st.markdown("""
-&lt;div style="text-align: center; color: #64748b; font-size: 14px; padding: 20px;"&gt;
-&lt;strong&gt;منصة تقييم القدرات المعرفية - وزارة العمل، سلطنة عُمان&lt;/strong&gt;&lt;br&gt;
-النسخة التجريبية المتقدمة | تم التطوير خصيصاً من أجل وزارة العمل&lt;br&gt;
+<div style="text-align: center; color: #64748b; font-size: 14px; padding: 20px;">
+<strong>منصة تقييم القدرات المعرفية - وزارة العمل، سلطنة عُمان</strong><br>
+النسخة التجريبية المتقدمة | تم التطوير خصيصاً من أجل وزارة العمل<br>
 جميع الحقوق محفوظة © ٢٠٢٥
-&lt;/div&gt;
+</div>
 """, unsafe_allow_html=True)
