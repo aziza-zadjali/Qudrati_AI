@@ -1,0 +1,1616 @@
+{
+  "questions": [
+    {
+      "id": "17714ad3",
+      "category": "معنى الكلمة حسب السياق",
+      "text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+      "options": [
+        "تحسن وتجدد",
+        "تهدم",
+        "تؤخر",
+        "تتجاهل"
+      ],
+      "answer": "تحسن وتجدد",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "العمل الجماعي",
+      "generated_at": "2025-08-11T23:07:43.779266",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:26:59.444662",
+      "reviewer_action": "approved"
+    },
+    {
+      "id": "49a7aeb4",
+      "category": "الاستدلال العددي",
+      "text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+      "options": [
+        "٢٠%",
+        "٣٥%",
+        "٢٥%",
+        "٣٠%"
+      ],
+      "answer": "٣٠%",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "العمل الجماعي",
+      "generated_at": "2025-08-11T23:08:37.274992",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:27:36.825591",
+      "reviewer_action": "approved"
+    },
+    {
+      "id": "9c7bbb4d",
+      "category": "معنى الكلمة حسب السياق",
+      "text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+      "options": [
+        "تهدم",
+        "تتجاهل",
+        "تحسن وتجدد",
+        "تؤخر"
+      ],
+      "answer": "تحسن وتجدد",
+      "status": "rejected",
+      "difficulty": "متوسط",
+      "topic": "",
+      "generated_at": "2025-08-11T23:18:24.839473",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:27:46.009937",
+      "reviewer_action": "rejected"
+    },
+    {
+      "id": "afb7087a",
+      "category": "معاني الكلمات",
+      "text": "ما معنى كلمة 'الإنجاز'؟",
+      "options": [
+        "تنظيم",
+        "تنفيذ",
+        "تخطيط",
+        "تحليل"
+      ],
+      "answer": "تنفيذ",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "الإنجاز",
+      "generated_at": "2025-08-11T23:24:39.764437",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:34:09.305803",
+      "reviewer_action": "approved"
+    },
+    {
+      "id": "a99349f7",
+      "category": "معاني الكلمات",
+      "text": "ما معنى كلمة 'العدالة'؟",
+      "options": [
+        "الطغيان",
+        "الاستبداد",
+        "الفساد",
+        "المساواة"
+      ],
+      "answer": "المساواة",
+      "status": "rejected",
+      "difficulty": "متوسط",
+      "topic": "العدالة",
+      "generated_at": "2025-08-11T23:24:39.764437",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:35:00.183971",
+      "reviewer_action": "rejected"
+    },
+    {
+      "id": "f553c5ac",
+      "category": "معاني الكلمات",
+      "text": "ما معنى كلمة 'الإبداع'؟",
+      "options": [
+        "المحاكاة",
+        "التقليد",
+        "التكرار",
+        "الابتكار"
+      ],
+      "answer": "الابتكار",
+      "status": "rejected",
+      "difficulty": "متوسط",
+      "topic": "الإبداع",
+      "generated_at": "2025-08-11T23:24:39.764437",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:34:45.355818",
+      "reviewer_action": "rejected"
+    },
+    {
+      "id": "30adf796",
+      "category": "معاني الكلمات",
+      "text": "ما معنى كلمة 'النهضة'؟",
+      "options": [
+        "الخراب",
+        "التدهور",
+        "التطور",
+        "الاستقرار"
+      ],
+      "answer": "التطور",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "النهضة",
+      "generated_at": "2025-08-11T23:24:39.764437",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:34:50.200419",
+      "reviewer_action": "approved"
+    },
+    {
+      "id": "507b7ba2",
+      "category": "معاني الكلمات",
+      "text": "ما معنى كلمة 'التعاون'؟",
+      "options": [
+        "الخلاف",
+        "التنافس",
+        "التكاتف",
+        "الاستقلال"
+      ],
+      "answer": "التكاتف",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "التعاون",
+      "generated_at": "2025-08-11T23:24:39.764437",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:34:54.442175",
+      "reviewer_action": "approved"
+    },
+    {
+      "id": "7fc40c35",
+      "category": "سلاسل الأعداد",
+      "text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+      "options": [
+        "٤٨",
+        "٥٨",
+        "٦٣",
+        "٤٦"
+      ],
+      "answer": "٤٨",
+      "status": "approved",
+      "difficulty": "متوسط",
+      "topic": "العمل الجماعي",
+      "generated_at": "2025-08-11T23:25:51.389025",
+      "generator": "ai_advanced_bulk",
+      "reviewed_at": "2025-08-11T23:34:58.101520",
+      "reviewer_action": "approved"
+    }
+  ],
+  "exams": [
+    {
+      "id": "99c12dc4",
+      "title": "اختبار القدرات المعرفية الأساسي",
+      "description": "اختبار شامل لتقييم القدرات المعرفية الأساسية للمتقدمين",
+      "question_ids": [
+        "17714ad3",
+        "49a7aeb4",
+        "afb7087a",
+        "30adf796",
+        "507b7ba2",
+        "7fc40c35"
+      ],
+      "time_limit": 30,
+      "difficulty": "متوسط",
+      "created_at": "2025-08-11T23:42:56.681384",
+      "settings": {
+        "shuffle_questions": true,
+        "shuffle_options": false,
+        "show_results": true,
+        "allow_review": true
+      },
+      "status": "active"
+    },
+    {
+      "id": "11408db2",
+      "title": "اختبار القدرات المعرفية الأساسي",
+      "description": "اختبار شامل لتقييم القدرات المعرفية الأساسية للمتقدمين",
+      "question_ids": [
+        "7fc40c35",
+        "afb7087a",
+        "30adf796",
+        "507b7ba2",
+        "17714ad3",
+        "49a7aeb4"
+      ],
+      "time_limit": 30,
+      "difficulty": "متوسط",
+      "created_at": "2025-08-11T23:43:11.577541",
+      "settings": {
+        "shuffle_questions": true,
+        "shuffle_options": false,
+        "show_results": true,
+        "allow_review": true
+      },
+      "status": "active"
+    },
+    {
+      "id": "367a01e4",
+      "title": "اختبار القدرات المعرفية الأساسي",
+      "description": "اختبار شامل لتقييم القدرات المعرفية الأساسية للمتقدمين",
+      "question_ids": [
+        "7fc40c35",
+        "afb7087a",
+        "30adf796",
+        "507b7ba2",
+        "17714ad3",
+        "49a7aeb4"
+      ],
+      "time_limit": 30,
+      "difficulty": "متوسط",
+      "created_at": "2025-08-11T23:43:34.932772",
+      "settings": {
+        "shuffle_questions": true,
+        "shuffle_options": false,
+        "show_results": true,
+        "allow_review": true
+      },
+      "status": "active"
+    }
+  ],
+  "submissions": [
+    {
+      "id": "demo_1",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "أحمد محمد",
+      "student_id": "12345000",
+      "department": "الخدمات",
+      "score": 12,
+      "total_questions": 15,
+      "percentage": 80.0,
+      "time_taken": 44,
+      "timestamp": "2025-07-22T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_2",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "فاطمة علي",
+      "student_id": "12345001",
+      "department": "التكنولوجيا",
+      "score": 9,
+      "total_questions": 15,
+      "percentage": 60.0,
+      "time_taken": 20,
+      "timestamp": "2025-08-08T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_3",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "خالد السعيد",
+      "student_id": "12345002",
+      "department": "الموارد البشرية",
+      "score": 11,
+      "total_questions": 15,
+      "percentage": 73.33333333333333,
+      "time_taken": 22,
+      "timestamp": "2025-08-02T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_4",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "سالم الهنائي",
+      "student_id": "12345003",
+      "department": "الخدمات",
+      "score": 9,
+      "total_questions": 15,
+      "percentage": 60.0,
+      "time_taken": 45,
+      "timestamp": "2025-08-07T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_5",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "مريم الكندي",
+      "student_id": "12345004",
+      "department": "المالية",
+      "score": 11,
+      "total_questions": 15,
+      "percentage": 73.33333333333333,
+      "time_taken": 21,
+      "timestamp": "2025-07-21T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_6",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "أحمد محمد",
+      "student_id": "12345005",
+      "department": "الموارد البشرية",
+      "score": 14,
+      "total_questions": 15,
+      "percentage": 93.33333333333333,
+      "time_taken": 20,
+      "timestamp": "2025-08-01T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_7",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "مريم الكندي",
+      "student_id": "12345006",
+      "department": "الإدارة",
+      "score": 10,
+      "total_questions": 15,
+      "percentage": 66.66666666666666,
+      "time_taken": 17,
+      "timestamp": "2025-07-17T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_8",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "أحمد محمد",
+      "student_id": "12345007",
+      "department": "المالية",
+      "score": 8,
+      "total_questions": 15,
+      "percentage": 53.333333333333336,
+      "time_taken": 33,
+      "timestamp": "2025-07-29T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_9",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "سالم الهنائي",
+      "student_id": "12345008",
+      "department": "الخدمات",
+      "score": 13,
+      "total_questions": 15,
+      "percentage": 86.66666666666667,
+      "time_taken": 18,
+      "timestamp": "2025-08-10T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_10",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "فاطمة علي",
+      "student_id": "12345009",
+      "department": "الموارد البشرية",
+      "score": 8,
+      "total_questions": 15,
+      "percentage": 53.333333333333336,
+      "time_taken": 19,
+      "timestamp": "2025-08-09T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_11",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "فاطمة علي",
+      "student_id": "12345010",
+      "department": "الإدارة",
+      "score": 6,
+      "total_questions": 15,
+      "percentage": 40.0,
+      "time_taken": 22,
+      "timestamp": "2025-08-02T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_12",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "سالم الهنائي",
+      "student_id": "12345011",
+      "department": "المالية",
+      "score": 9,
+      "total_questions": 15,
+      "percentage": 60.0,
+      "time_taken": 35,
+      "timestamp": "2025-08-06T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_13",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "أحمد محمد",
+      "student_id": "12345012",
+      "department": "الخدمات",
+      "score": 14,
+      "total_questions": 15,
+      "percentage": 93.33333333333333,
+      "time_taken": 40,
+      "timestamp": "2025-07-28T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_14",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "سالم الهنائي",
+      "student_id": "12345013",
+      "department": "الخدمات",
+      "score": 9,
+      "total_questions": 15,
+      "percentage": 60.0,
+      "time_taken": 39,
+      "timestamp": "2025-07-20T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_15",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "مريم الكندي",
+      "student_id": "12345014",
+      "department": "الإدارة",
+      "score": 13,
+      "total_questions": 15,
+      "percentage": 86.66666666666667,
+      "time_taken": 21,
+      "timestamp": "2025-07-31T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_16",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "فاطمة علي",
+      "student_id": "12345015",
+      "department": "المالية",
+      "score": 10,
+      "total_questions": 15,
+      "percentage": 66.66666666666666,
+      "time_taken": 31,
+      "timestamp": "2025-08-06T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_17",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "خالد السعيد",
+      "student_id": "12345016",
+      "department": "المالية",
+      "score": 6,
+      "total_questions": 15,
+      "percentage": 40.0,
+      "time_taken": 39,
+      "timestamp": "2025-07-31T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_18",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "مريم الكندي",
+      "student_id": "12345017",
+      "department": "الموارد البشرية",
+      "score": 11,
+      "total_questions": 15,
+      "percentage": 73.33333333333333,
+      "time_taken": 23,
+      "timestamp": "2025-08-06T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_19",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "خالد السعيد",
+      "student_id": "12345018",
+      "department": "التكنولوجيا",
+      "score": 15,
+      "total_questions": 15,
+      "percentage": 100.0,
+      "time_taken": 18,
+      "timestamp": "2025-07-17T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "demo_20",
+      "exam_id": "demo_exam",
+      "exam_title": "اختبار القدرات التجريبي",
+      "student_name": "سالم الهنائي",
+      "student_id": "12345019",
+      "department": "التكنولوجيا",
+      "score": 9,
+      "total_questions": 15,
+      "percentage": 60.0,
+      "time_taken": 20,
+      "timestamp": "2025-07-15T23:55:06.657479",
+      "status": "completed"
+    },
+    {
+      "id": "1754942232",
+      "exam_id": "99c12dc4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "afb7087a": "تنظيم",
+        "30adf796": "التدهور",
+        "7fc40c35": "٦٣",
+        "507b7ba2": "التكاتف",
+        "49a7aeb4": "٢٥%",
+        "17714ad3": "تحسن وتجدد"
+      },
+      "score": 2,
+      "total_questions": 6,
+      "percentage": 33.33333333333333,
+      "time_taken": 4,
+      "timestamp": "2025-08-11T23:57:12.344613",
+      "status": "completed",
+      "submission_method": "manual"
+    },
+    {
+      "id": "1754985473",
+      "exam_id": "11408db2",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "30adf796": "الخراب",
+        "49a7aeb4": "٢٠%",
+        "507b7ba2": "الخلاف",
+        "17714ad3": "تحسن وتجدد",
+        "afb7087a": "تنفيذ",
+        "7fc40c35": "٤٨"
+      },
+      "score": 3,
+      "total_questions": 6,
+      "percentage": 50.0,
+      "time_taken": 0,
+      "timestamp": "2025-08-12T11:57:53.165319",
+      "status": "completed",
+      "submission_method": "manual"
+    },
+    {
+      "id": "sub_1754987494",
+      "exam_id": "99c12dc4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "49a7aeb4": "٢٠%",
+        "17714ad3": "تحسن وتجدد",
+        "afb7087a": "تنفيذ",
+        "7fc40c35": "٤٨",
+        "507b7ba2": "التكاتف",
+        "30adf796": "التطور"
+      },
+      "score": 5,
+      "total_questions": 6,
+      "percentage": 83.33333333333334,
+      "time_taken": 0,
+      "timestamp": "2025-08-12T12:31:33.988996",
+      "status": "approved",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٢٠%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_approved": true,
+      "final_results_released": true,
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_review_date": "2025-08-12T12:34:53.651860"
+    },
+    {
+      "id": "sub_1754987776",
+      "exam_id": "11408db2",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "507b7ba2": "التكاتف",
+        "49a7aeb4": "٣٥%",
+        "7fc40c35": "٤٨",
+        "17714ad3": "تحسن وتجدد",
+        "afb7087a": "تنفيذ",
+        "30adf796": "التطور"
+      },
+      "score": 5,
+      "total_questions": 6,
+      "percentage": 83.33333333333334,
+      "time_taken": 0,
+      "timestamp": "2025-08-12T12:36:15.738434",
+      "status": "submitted",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٣٥%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_approved": false,
+      "final_results_released": false
+    },
+    {
+      "id": "sub_1754988760",
+      "exam_id": "367a01e4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "7fc40c35": "٤٨",
+        "49a7aeb4": "٣٥%",
+        "507b7ba2": "التكاتف",
+        "17714ad3": "تحسن وتجدد",
+        "afb7087a": "تنفيذ",
+        "30adf796": "التطور"
+      },
+      "score": 5,
+      "total_questions": 6,
+      "percentage": 83.33333333333334,
+      "time_taken": 1,
+      "timestamp": "2025-08-12T12:52:40.092688",
+      "status": "approved",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٣٥%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_approved": true,
+      "final_results_released": true,
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_review_date": "2025-08-12T12:53:48.594136"
+    },
+    {
+      "id": "sub_1754992240",
+      "exam_id": "367a01e4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "position": "موظف",
+      "answers": {
+        "507b7ba2": "الخلاف",
+        "afb7087a": "تنظيم",
+        "49a7aeb4": "٢٠%",
+        "30adf796": "الخراب",
+        "17714ad3": "تحسن وتجدد",
+        "7fc40c35": "٤٨"
+      },
+      "score": 2,
+      "total_questions": 6,
+      "percentage": 33.33333333333333,
+      "time_taken": 1,
+      "timestamp": "2025-08-12T13:50:40.737087",
+      "status": "approved",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 2,
+        "incorrect_answers": 4,
+        "percentage": 33.33333333333333,
+        "performance_level": "يحتاج تحسين",
+        "performance_color": "#ef4444",
+        "detailed_results": [
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "الخلاف",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنظيم",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٢٠%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "الخراب",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_approved": true,
+      "final_results_released": true,
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_review_date": "2025-08-12T13:51:20.214022",
+      "sme_comments": ""
+    }
+  ],
+  "sme_reviews": [
+    {
+      "id": "sme_sub_1754987494_1754987494",
+      "submission_id": "sub_1754987494",
+      "exam_id": "99c12dc4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٢٠%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_status": "approved",
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_comments": "",
+      "sme_reviewed_at": "2025-08-12T12:34:53.651860",
+      "created_at": "2025-08-12T12:31:33.988996",
+      "priority": "normal"
+    },
+    {
+      "id": "sme_sub_1754987776_1754987776",
+      "submission_id": "sub_1754987776",
+      "exam_id": "11408db2",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٣٥%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_status": "pending_review",
+      "sme_reviewer": null,
+      "sme_comments": "",
+      "sme_reviewed_at": null,
+      "created_at": "2025-08-12T12:36:15.738434",
+      "priority": "normal"
+    },
+    {
+      "id": "sme_sub_1754988760_1754988760",
+      "submission_id": "sub_1754988760",
+      "exam_id": "367a01e4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 5,
+        "incorrect_answers": 1,
+        "percentage": 83.33333333333334,
+        "performance_level": "جيد جداً",
+        "performance_color": "#3b82f6",
+        "detailed_results": [
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٣٥%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "التكاتف",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنفيذ",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "التطور",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_status": "approved",
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_comments": "",
+      "sme_reviewed_at": "2025-08-12T12:53:48.594136",
+      "created_at": "2025-08-12T12:52:40.098188",
+      "priority": "normal"
+    },
+    {
+      "id": "sme_sub_1754992240_1754992240",
+      "submission_id": "sub_1754992240",
+      "exam_id": "367a01e4",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "student_name": "أحمد محمد الهنائي",
+      "student_id": "12345678",
+      "department": "الموارد البشرية",
+      "auto_correction": {
+        "total_questions": 6,
+        "correct_answers": 2,
+        "incorrect_answers": 4,
+        "percentage": 33.33333333333333,
+        "performance_level": "يحتاج تحسين",
+        "performance_color": "#ef4444",
+        "detailed_results": [
+          {
+            "question_id": "507b7ba2",
+            "question_text": "ما معنى كلمة 'التعاون'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخلاف",
+              "التنافس",
+              "التكاتف",
+              "الاستقلال"
+            ],
+            "correct_answer": "التكاتف",
+            "student_answer": "الخلاف",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "afb7087a",
+            "question_text": "ما معنى كلمة 'الإنجاز'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تنظيم",
+              "تنفيذ",
+              "تخطيط",
+              "تحليل"
+            ],
+            "correct_answer": "تنفيذ",
+            "student_answer": "تنظيم",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "49a7aeb4",
+            "question_text": "زادت أرباح شركة من ٥٠٠ ريال إلى ٦٥٠ ريال. كم نسبة الزيادة؟",
+            "question_category": "الاستدلال العددي",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٢٠%",
+              "٣٥%",
+              "٢٥%",
+              "٣٠%"
+            ],
+            "correct_answer": "٣٠%",
+            "student_answer": "٢٠%",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "30adf796",
+            "question_text": "ما معنى كلمة 'النهضة'؟",
+            "question_category": "معاني الكلمات",
+            "question_difficulty": "متوسط",
+            "options": [
+              "الخراب",
+              "التدهور",
+              "التطور",
+              "الاستقرار"
+            ],
+            "correct_answer": "التطور",
+            "student_answer": "الخراب",
+            "is_correct": false,
+            "points": 0
+          },
+          {
+            "question_id": "17714ad3",
+            "question_text": "في الجملة: 'الشركة تطور منتجات جديدة' - ما معنى 'تطور'؟",
+            "question_category": "معنى الكلمة حسب السياق",
+            "question_difficulty": "متوسط",
+            "options": [
+              "تحسن وتجدد",
+              "تهدم",
+              "تؤخر",
+              "تتجاهل"
+            ],
+            "correct_answer": "تحسن وتجدد",
+            "student_answer": "تحسن وتجدد",
+            "is_correct": true,
+            "points": 1
+          },
+          {
+            "question_id": "7fc40c35",
+            "question_text": "ما العدد التالي في المتتالية: ٣, ٦, ١٢, ٢٤، ؟",
+            "question_category": "سلاسل الأعداد",
+            "question_difficulty": "متوسط",
+            "options": [
+              "٤٨",
+              "٥٨",
+              "٦٣",
+              "٤٦"
+            ],
+            "correct_answer": "٤٨",
+            "student_answer": "٤٨",
+            "is_correct": true,
+            "points": 1
+          }
+        ]
+      },
+      "sme_status": "approved",
+      "sme_reviewer": "د. محمد الخبير",
+      "sme_comments": "",
+      "sme_reviewed_at": "2025-08-12T13:51:20.214022",
+      "created_at": "2025-08-12T13:50:40.737087",
+      "priority": "normal"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif_sub_1754992240_1754992280",
+      "student_id": "12345678",
+      "student_name": "أحمد محمد الهنائي",
+      "student_email": "أحمد.محمد.الهنائي@mol.gov.om",
+      "message": "تم اعتماد نتائج اختبار 'اختبار القدرات المعرفية الأساسي' من قبل الخبير د. محمد الخبير",
+      "message_details": "حصلت على 2/6 (33.3%)",
+      "type": "results_approved",
+      "exam_title": "اختبار القدرات المعرفية الأساسي",
+      "score": 2,
+      "total_questions": 6,
+      "percentage": 33.33333333333333,
+      "performance_level": "يحتاج تحسين",
+      "sent_at": "2025-08-12T13:51:20.214022",
+      "status": "sent",
+      "channels": [
+        "email",
+        "sms",
+        "portal"
+      ]
+    }
+  ]
+}
