@@ -96,12 +96,12 @@ except ImportError:
 
 def call_openai(prompt, max_tokens=200):
     """Call OpenAI API if available"""
-    if not openai:
+    if not client:
         return ""
     
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # or gpt-4o for higher quality
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=max_tokens
@@ -110,6 +110,7 @@ def call_openai(prompt, max_tokens=200):
     except Exception as e:
         st.warning(f"OpenAI API Error: {e}")
         return ""
+
 
 def randomize_choices(correct_choice, distractors):
     """Randomize the order of choices and return shuffled choices with correct answer info"""
