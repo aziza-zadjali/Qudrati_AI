@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 from pathlib import Path
+import openai
 
 # Page config
 st.set_page_config(
@@ -56,7 +57,6 @@ st.markdown("""
     hyphens: auto;
 }
 
-
 .metric-container {
     background: linear-gradient(135deg, #f8fafc, #e2e8f0);
     border-radius: 12px;
@@ -75,12 +75,7 @@ def load_db():
         with open(DB_PATH, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        # Initialize empty database
-        empty_db = {
-            "questions": [],
-            "exams": [], 
-            "submissions": []
-        }
+        empty_db = {"questions": [], "exams": [], "submissions": []}
         with open(DB_PATH, 'w', encoding='utf-8') as f:
             json.dump(empty_db, f, ensure_ascii=False, indent=2)
         return empty_db
@@ -101,7 +96,6 @@ st.markdown("""
 <p style="font-size: 16px; line-height: 1.8; color: #075985;">
 هذه نسخة تجريبية شاملة من منصة تقييم القدرات المعرفية التي تتضمن <strong>مرحلتين متكاملتين</strong>:
 </p>
-
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
 <div style="background: #ecfdf5; padding: 20px; border-radius: 10px;">
 <h4 style="color: #065f46; margin: 0 0 10px 0;">🎯 المرحلة الأولى: تطوير المحتوى</h4>
@@ -111,7 +105,6 @@ st.markdown("""
 <li>تجميع الاختبارات</li>
 </ul>
 </div>
-
 <div style="background: #fef3c7; padding: 20px; border-radius: 10px;">
 <h4 style="color: #92400e; margin: 0 0 10px 0;">🚀 المرحلة الثانية: التشغيل</h4>
 <ul style="color: #b45309; margin: 0;">
@@ -127,176 +120,77 @@ st.markdown("""
 # Load and display metrics
 try:
     data = load_db()
-    
     col1, col2, col3, col4 = st.columns(4)
-    
     with col1:
-        total_questions = len(data.get('questions', []))
-        st.metric(
-            label="📝 إجمالي الأسئلة", 
-            value=total_questions,
-            help="العدد الإجمالي للأسئلة في النظام"
-        )
-    
+        st.metric("📝 إجمالي الأسئلة", len(data.get('questions', [])))
     with col2:
         approved_questions = len([q for q in data.get('questions', []) if q.get('status') == 'approved'])
-        st.metric(
-            label="✅ الأسئلة المعتمدة", 
-            value=approved_questions,
-            help="الأسئلة التي تمت الموافقة عليها"
-        )
-    
+        st.metric("✅ الأسئلة المعتمدة", approved_questions)
     with col3:
-        total_exams = len(data.get('exams', []))
-        st.metric(
-            label="📋 الاختبارات المتاحة", 
-            value=total_exams,
-            help="عدد الاختبارات الجاهزة"
-        )
-    
+        st.metric("📋 الاختبارات المتاحة", len(data.get('exams', [])))
     with col4:
-        total_submissions = len(data.get('submissions', []))
-        st.metric(
-            label="👥 محاولات الطلاب", 
-            value=total_submissions,
-            help="عدد المحاولات المسجلة"
-        )
-        
+        st.metric("👥 محاولات الطلاب", len(data.get('submissions', [])))
 except Exception as e:
     st.error(f"خطأ في تحميل البيانات: {e}")
 
 # Features overview
 st.markdown("### 🌟 المزايا التنافسية")
-
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.markdown("""
-    <div class="feature-card">
-    <h4 style="color: #065f46;">🤖 الذكاء الاصطناعي </h4>
-    <p style="color: #047857;">
-    • توليد أسئلة عالية الجودة باستخدام GPT-4<br>
-    • فلترة ذكية للمحتوى<br>
-    • نماذج احتياطية مفتوحة المصدر<br>
-    • تحسين مستمر عبر التعلم الآلي
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown("""<div class="feature-card"><h4 style="color: #065f46;">🤖 الذكاء الاصطناعي </h4>
+<p style="color: #047857;">• توليد أسئلة عالية الجودة باستخدام GPT-4<br>• فلترة ذكية للمحتوى<br>• نماذج احتياطية مفتوحة المصدر<br>• تحسين مستمر عبر التعلم الآلي</p></div>""", unsafe_allow_html=True)
 with col2:
-    st.markdown("""
-    <div class="feature-card">
-    <h4 style="color: #1e40af;">👨‍🏫 ضمان الجودة</h4>
-    <p style="color: #1d4ed8;">
-    • مراجعة شاملة من خبراء المادة<br>
-    • تدفق موافقة متعدد المراحل<br>
-    • معايير جودة صارمة<br>
-    • تتبع الأداء والتحسين
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown("""<div class="feature-card"><h4 style="color: #1e40af;">👨‍🏫 ضمان الجودة</h4>
+<p style="color: #1d4ed8;">• مراجعة شاملة من خبراء المادة<br>• تدفق موافقة متعدد المراحل<br>• معايير جودة صارمة<br>• تتبع الأداء والتحسين</p></div>""", unsafe_allow_html=True)
 with col3:
-    st.markdown("""
-    <div class="feature-card">
-    <h4 style="color: #92400e;">🔒 الأمان والامتثال</h4>
-    <p style="color: #b45309;">
-    • نشر داخلي على خوادم الوزارة<br>
-    • تشفير شامل للبيانات<br>
-    • امتثال لمعايير الأمان الحكومية<br>
-    • تسجيل شامل للأنشطة
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div class="feature-card"><h4 style="color: #92400e;">🔒 الأمان والامتثال</h4>
+<p style="color: #b45309;">• نشر داخلي على خوادم الوزارة<br>• تشفير شامل للبيانات<br>• امتثال لمعايير الأمان الحكومية<br>• تسجيل شامل للأنشطة</p></div>""", unsafe_allow_html=True)
 
 # Technical specifications
 st.markdown("### ⚙️ المواصفات التقنية")
-
 col1, col2 = st.columns(2)
-
 with col1:
     st.markdown("""
-    **البنية التحتية:**
-    - **الواجهة الأمامية:** React + TypeScript مع دعم RTL
-    - **الخادم الخلفي:** Python FastAPI مع قواعد البيانات المحلية
-    - **قاعدة البيانات:** PostgreSQL مع Redis للتخزين المؤقت
-    - **الذكاء الاصطناعي:** OpenAI GPT-4 + نماذج محلية
-    """)
-
+**البنية التحتية:**
+- **الواجهة الأمامية:** React + TypeScript مع دعم RTL
+- **الخادم الخلفي:** Python FastAPI مع قواعد البيانات المحلية
+- **قاعدة البيانات:** PostgreSQL مع Redis للتخزين المؤقت
+- **الذكاء الاصطناعي:** OpenAI GPT-4 + نماذج محلية
+""")
 with col2:
     st.markdown("""
-    **الأداء والموثوقية:**
-    - **الدعم المتزامن:** 500+ مستخدم
-    - **وقت الاستجابة:** أقل من 2 ثانية
-    - **معدل التشغيل:** 99.9% خلال ساعات العمل
-    - **النسخ الاحتياطي:** آلي يومي
-    """)
-
-# Navigation guide
-st.markdown("### 📱 دليل الاستخدام")
-
-st.markdown("""
-<div style="background: #f1f5f9; padding: 25px; border-radius: 12px; margin: 20px 0;">
-<strong>للاستفادة الكاملة من النسخة التجريبية:</strong><br><br>
-
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #3b82f6;">
-<strong>1️⃣ توليد الأسئلة</strong><br>
-استخدم الذكاء الاصطناعي لإنشاء أسئلة بـ 12 نوعاً مختلفاً
-</div>
-
-<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #16a34a;">
-<strong>2️⃣ مراجعة الخبراء</strong><br>
-راجع واعتمد الأسئلة المولدة قبل الاستخدام
-</div>
-
-<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #ea580c;">
-<strong>3️⃣ تجميع الاختبارات</strong><br>
-أنشئ اختبارات مخصصة من الأسئلة المعتمدة
-</div>
-
-<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #7c3aed;">
-<strong>4️⃣ تقديم الاختبار</strong><br>
-جرب تجربة الطالب الكاملة مع التوقيت
-</div>
-
-<div style="background: white; padding: 15px; border-radius: 8px; border-right: 3px solid #dc2626;">
-<strong>5️⃣ التحليلات</strong><br>
-استعرض التقارير والإحصائيات التفصيلية
-</div>
-</div>
-
-<br>
-<strong>💡 نصيحة:</strong> ابدأ بتوليد بعض الأسئلة، ثم اعتمدها، وأنشئ اختباراً لرؤية التدفق الكامل في العمل.
-</div>
-""", unsafe_allow_html=True)
+**الأداء والموثوقية:**
+- **الدعم المتزامن:** 500+ مستخدم
+- **وقت الاستجابة:** أقل من 2 ثانية
+- **معدل التشغيل:** 99.9% خلال ساعات العمل
+- **النسخ الاحتياطي:** آلي يومي
+""")
 
 # System status
 st.markdown("### 🔧 حالة النظام")
-
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # Check OpenAI connectivity
     try:
         openai_key = st.secrets.get("OPENAI_API_KEY")
         if openai_key and openai_key != "your_openai_api_key_here":
+            openai.api_key = openai_key
+            # Test API connectivity
+            openai.models.list()
             st.success("🟢 اتصال OpenAI: متصل")
         else:
             st.warning("🟡 اتصال OpenAI: غير مكون")
-    except:
-        st.warning("🟡 اتصال OpenAI: غير متاح")
+    except Exception as e:
+        st.error(f"🔴 اتصال OpenAI: غير متصل ({e})")
 
 with col2:
-    # Check database
     try:
-        data = load_db()
+        load_db()
         st.success("🟢 قاعدة البيانات: متصلة")
     except:
         st.error("🔴 قاعدة البيانات: خطأ")
 
 with col3:
-    # Check UI
     st.success("🟢 واجهة المستخدم: تعمل")
 
 # Footer
