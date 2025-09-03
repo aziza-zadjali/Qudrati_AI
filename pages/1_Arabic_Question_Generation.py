@@ -80,23 +80,51 @@ if 'generated_questions' not in st.session_state:
 if 'bulk_generation' not in st.session_state:
     st.session_state.bulk_generation = False
 
+import os
+
 # OpenAI integration (Streamlit Cloud compatible)
 try:
     from openai import OpenAI
-    
-    api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if api_key:
-        client = OpenAI(api_key=api_key)
-    else:
-        client = None
 except ImportError:
-    client = None
+    OpenAI = None
 
-# Status check
-if client:
-    st.success("🟢 OpenAI API متصل ويعمل")
-else:
-    st.warning("🟡 OpenAI API غير متصل - سيتم استخدام البيانات التجريبية")
+def _get_openai_api_key():
+    """Read API key from [openai].api_key, or OPENAI_API_KEY, or env var."""
+    try:
+        # Preferred: secrets section [openai]
+        if "openai" in st.secrets and "api_key" in st.secrets["openai"]:
+            return st.secrets["openai"]["api_key"]
+    except Exception:
+        pass
+
+    # Fallbacks: flat secret or environment variable
+    key = st.secrets.get("OPENAI_API_KEY", "")
+    if key:
+        return key
+
+    return os.getenv("OPENAI_API_KEY", "")
+
+api_key = _get_openai_api_key()
+
+# Create client if possible
+client = OpenAI(api_key=api_key) if (OpenAI and api_key) else None
+
+def call_openai(prompt, max_tokens=200):
+    """Call OpenAI API if available."""
+    if client is None:
+        return ""
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",  # Use "gpt-4o" if you prefer higher quality
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=max_tokens,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        st.warning(f"OpenAI API Error: {e}")
+        return ""
+
 
 
 
