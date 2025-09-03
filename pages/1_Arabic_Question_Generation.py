@@ -87,17 +87,22 @@ try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
+# ---------------------------
+# OpenAI integration (Streamlit Cloud compatible)
+# ---------------------------
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 def _get_openai_api_key():
     """Read API key from [openai].api_key, or OPENAI_API_KEY, or env var."""
     try:
-        # Preferred: secrets section [openai]
         if "openai" in st.secrets and "api_key" in st.secrets["openai"]:
             return st.secrets["openai"]["api_key"]
     except Exception:
         pass
 
-    # Fallbacks: flat secret or environment variable
     key = st.secrets.get("OPENAI_API_KEY", "")
     if key:
         return key
@@ -108,6 +113,9 @@ api_key = _get_openai_api_key()
 
 # Create client if possible
 client = OpenAI(api_key=api_key) if (OpenAI and api_key) else None
+
+# Debug info (remove after testing)
+st.caption(f"🔍 Debug: API key found: {bool(api_key)} | SDK loaded: {OpenAI is not None} | Client created: {client is not None}")
 
 def call_openai(prompt, max_tokens=200):
     """Call OpenAI API if available."""
@@ -124,6 +132,8 @@ def call_openai(prompt, max_tokens=200):
     except Exception as e:
         st.warning(f"OpenAI API Error: {e}")
         return ""
+
+
 
 # ---------------------------
 # Question generation helpers
