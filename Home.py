@@ -198,7 +198,7 @@ with col1:
 
         if key and key.strip() and key != "your_openai_api_key_here":
             masked = "****" + key[-4:]
-            st.success(f"🟢 اتصال OpenAI: مفتاح مكوَّن ({masked})")
+            st.success(f"🟢 اتصال OpenAI: مفتاح مكوَّن")
         else:
             st.warning("🟡 اتصال OpenAI: غير مكوَّن")
     except Exception as e:
@@ -223,3 +223,4 @@ st.markdown("""
 جميع الحقوق محفوظة © ٢٠٢٥
 </div>
 """, unsafe_allow_html=True)
+
