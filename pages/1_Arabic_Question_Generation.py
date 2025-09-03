@@ -80,14 +80,18 @@ if 'generated_questions' not in st.session_state:
 if 'bulk_generation' not in st.session_state:
     st.session_state.bulk_generation = False
 
-# OpenAI integration
+# OpenAI integration (Streamlit Cloud compatible)
 try:
-    import openai
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if not openai.api_key or openai.api_key == "your_openai_api_key_here":
-        openai = None
+    from openai import OpenAI
+    
+    api_key = st.secrets.get("OPENAI_API_KEY", "")
+    if api_key:
+        client = OpenAI(api_key=api_key)
+    else:
+        client = None
 except ImportError:
-    openai = None
+    client = None
+
 
 
 def call_openai(prompt, max_tokens=200):
