@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit page: Arabic visual IQ question generator
+Streamlit page 7: Arabic visual IQ question generator
 - Paper folding & hole punching
 - 2D quadrant rotation
 - 3D isometric cube rotation
@@ -8,7 +8,8 @@ Streamlit page: Arabic visual IQ question generator
 Optional: Arabic wording/explanations via a local open-source LLM using Ollama.
 
 NOTE:
-- Designed to live under the `pages/` directory of a Streamlit multipage app.
+- Place this file under the repo's `pages/` directory with the exact name:
+  pages/7_spacial_questions.py
 - Do NOT call st.set_page_config() here; the main app (Home.py) manages it.
 """
 
@@ -24,15 +25,15 @@ import numpy as np
 from PIL import Image, ImageDraw
 import streamlit as st
 
-# Optional: requests (for local Ollama). Fallback if not installed.
+# Optional: requests (for local Ollama). Falls back gracefully if missing.
 try:
     import requests  # type: ignore
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
 
 # ------------------------------ Paths ------------------------------
-ROOT = Path(__file__).parents[1]  # match your existing page style
-LOGO_PATH = ROOT / "MOL_logo.png"  # optional shared logo at repo root
+ROOT = Path(__file__).parents[1]          # repo root (matches your example style)
+LOGO_PATH = ROOT / "MOL_logo.png"         # optional shared logo at repo root
 
 # ------------------------------ Config ------------------------------
 AR_LETTERS = ["أ", "ب", "ج", "د"]
@@ -50,7 +51,10 @@ def ollama_chat_or_fallback(system: str, user: str, model: str, max_tokens: int 
             "http://localhost:11434/api/chat",
             json={
                 "model": model,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
                 "stream": False,
                 "options": {"num_predict": max_tokens},
             },
@@ -465,8 +469,8 @@ def shape_assembly_question(seed: int = 0) -> Question:
     )
     return Question(title=title, image=img, options=options, correct_index=correct_index, explanation=expl)
 
-# ---------------------- Streamlit Page (top-level, no page_config) ----------------------
-# Sidebar (logo + settings) — follows your existing pages' pattern
+# ---------------------- Streamlit Page 7 (top-level, no page_config) ----------------------
+# Sidebar (logo + settings) — same top-level pattern as your other pages
 if LOGO_PATH.exists():
     st.sidebar.image(str(LOGO_PATH))
 st.sidebar.markdown("### الإعدادات")
@@ -550,3 +554,4 @@ if gen:
     )
 else:
     st.info("اضغط **إنشاء الأسئلة** لبدء التوليد.")
+
