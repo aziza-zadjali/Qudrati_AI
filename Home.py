@@ -1,190 +1,188 @@
-import streamlit as st
+# Home.py
+import os
 import json
 from pathlib import Path
-import os
 
-# Page config
+import streamlit as st
+
+# ---------------------- Page config (set once here) ----------------------
 st.set_page_config(
     page_title="منصة تقييم القدرات المعرفية - وزارة العمل",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Arabic RTL styling
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&display=swap');
+# ---------------------- Navigation (Sidebar) ----------------------
+st.sidebar.markdown("### 🔀 التنقل")
+page = st.sidebar.radio(
+    label="انتقل بين الصفحات",
+    options=["الصفحة الرئيسية", "مولّد أسئلة الذكاء المرئية"],
+    index=0,
+)
 
-.main .block-container {
-    direction: rtl;
-    text-align: right;
-    font-family: 'Noto Sans Arabic', 'Cairo', sans-serif;
-}
+# If user picks the Spatial App, render it and stop the rest of Home content
+if page == "مولّد أسئلة الذكاء المرئية":
+    try:
+        # Import only when needed to keep startup light
+        from spacial_app import run_spatial_app
+    except Exception as e:
+        st.error(f"تعذّر تحميل وحدة المولّد: {e}")
+        st.stop()
 
-.main-title {
-    font-family: 'Cairo', sans-serif;
-    font-size: 32px;
-    font-weight: 700;
-    color: #1e3a8a;
-    text-align: center;
-    background: linear-gradient(135deg, #1e3a8a, #3b82f6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 30px;
-}
+    # Hand off the whole page rendering to the spatial app
+    run_spatial_app()
+    st.stop()
 
-.feature-card {
-    background: white;
-    padding: 25px;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    border-right: 4px solid #10b981;
-    margin: 15px 0;
-    height: auto;
-    min-height: 200px;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-}
+# ---------------------- (Home) Arabic RTL styling (optional) ----------------------
+# NOTE: Kept as-is (no visual change); add CSS rules here if you later need RTL tweaks.
+st.markdown("""""", unsafe_allow_html=True)
 
-.feature-card h4 {
-    font-size: 16px;
-    line-height: 1.4;
-    margin-bottom: 15px;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    hyphens: auto;
-}
-
-.metric-container {
-    background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-    border-radius: 12px;
-    padding: 20px;
-    margin: 10px 0;
-    border-right: 4px solid #1e3a8a;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Database helpers
+# ---------------------- Database helpers ----------------------
 DB_PATH = Path(__file__).with_name("demo_db_arabic.json")
+
 
 def load_db():
     try:
-        with open(DB_PATH, 'r', encoding='utf-8') as f:
+        with open(DB_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         empty_db = {"questions": [], "exams": [], "submissions": []}
-        with open(DB_PATH, 'w', encoding='utf-8') as f:
+        with open(DB_PATH, "w", encoding="utf-8") as f:
             json.dump(empty_db, f, ensure_ascii=False, indent=2)
         return empty_db
 
-# Header
-st.markdown("""
-<div class="main-title">
-🧠 منصة تقييم القدرات المعرفية
-<br>
-<small style="font-size: 20px; color: #64748b;">وزارة العمل - سلطنة عُمان</small>
-</div>
-""", unsafe_allow_html=True)
 
-# Introduction
-st.markdown("""
-<div style="background: #f0f9ff; padding: 25px; border-radius: 15px; border-right: 4px solid #0891b2; margin: 25px 0;">
-<h3 style="color: #0c4a6e; margin-top: 0;">💡 نسخة تجريبية متقدمة</h3>
-<p style="font-size: 16px; line-height: 1.8; color: #075985;">
-هذه نسخة تجريبية شاملة من منصة تقييم القدرات المعرفية التي تتضمن <strong>مرحلتين متكاملتين</strong>:
-</p>
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
-<div style="background: #ecfdf5; padding: 20px; border-radius: 10px;">
-<h4 style="color: #065f46; margin: 0 0 10px 0;">🎯 المرحلة الأولى: تطوير المحتوى</h4>
-<ul style="color: #047857; margin: 0;">
-<li>توليد الأسئلة بالذكاء الاصطناعي</li>
-<li>مراجعة وموافقة الخبراء</li>
-<li>تجميع الاختبارات</li>
-</ul>
-</div>
-<div style="background: #fef3c7; padding: 20px; border-radius: 10px;">
-<h4 style="color: #92400e; margin: 0 0 10px 0;">🚀 المرحلة الثانية: التشغيل</h4>
-<ul style="color: #b45309; margin: 0;">
-<li>تقديم الاختبارات للطلاب</li>
-<li>التصحيح والمراجعة</li>
-<li>التحليلات والتقارير</li>
-</ul>
-</div>
-</div>
-</div>
-""", unsafe_allow_html=True)
+# ---------------------- Header ----------------------
+st.markdown(
+    """
+# 🧠 منصة تقييم القدرات المعرفية  
+وزارة العمل - سلطنة عُمان
+""",
+    unsafe_allow_html=True,
+)
 
-# Load and display metrics
+# ---------------------- Introduction ----------------------
+st.markdown(
+    """
+#### 💡 نسخة تجريبية متقدمة
+
+هذه نسخة تجريبية شاملة من منصة تقييم القدرات المعرفية التي تتضمن مرحلتين متكاملتين:  
+##### 🎯 المرحلة الأولى: تطوير المحتوى
+- توليد الأسئلة بالذكاء الاصطناعي  
+- مراجعة وموافقة الخبراء  
+- تجميع الاختبارات  
+
+##### 🚀 المرحلة الثانية: التشغيل
+- تقديم الاختبارات للطلاب  
+- التصحيح والمراجعة  
+- التحليلات والتقارير
+""",
+    unsafe_allow_html=True,
+)
+
+# ---------------------- Load and display metrics ----------------------
 try:
     data = load_db()
     col1, col2, col3, col4 = st.columns(4)
+
     with col1:
-        st.metric("📝 إجمالي الأسئلة", len(data.get('questions', [])))
+        st.metric("📝 إجمالي الأسئلة", len(data.get("questions", [])))
     with col2:
-        approved_questions = len([q for q in data.get('questions', []) if q.get('status') == 'approved'])
+        approved_questions = len([q for q in data.get("questions", []) if q.get("status") == "approved"])
         st.metric("✅ الأسئلة المعتمدة", approved_questions)
     with col3:
-        st.metric("📋 الاختبارات المتاحة", len(data.get('exams', [])))
+        st.metric("📋 الاختبارات المتاحة", len(data.get("exams", [])))
     with col4:
-        st.metric("👥 محاولات الطلاب", len(data.get('submissions', [])))
+        st.metric("👥 محاولات الطلاب", len(data.get("submissions", [])))
 except Exception as e:
     st.error(f"خطأ في تحميل البيانات: {e}")
 
-# Features overview
+# ---------------------- Features overview ----------------------
 st.markdown("### 🌟 المزايا التنافسية")
 col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("""<div class="feature-card"><h4 style="color: #065f46;">🤖 الذكاء الاصطناعي </h4>
-<p style="color: #047857;">• توليد أسئلة عالية الجودة باستخدام GPT-4<br>• فلترة ذكية للمحتوى<br>• نماذج احتياطية مفتوحة المصدر<br>• تحسين مستمر عبر التعلم الآلي</p></div>""", unsafe_allow_html=True)
-with col2:
-    st.markdown("""<div class="feature-card"><h4 style="color: #1e40af;">👨‍🏫 ضمان الجودة</h4>
-<p style="color: #1d4ed8;">• مراجعة شاملة من خبراء المادة<br>• تدفق موافقة متعدد المراحل<br>• معايير جودة صارمة<br>• تتبع الأداء والتحسين</p></div>""", unsafe_allow_html=True)
-with col3:
-    st.markdown("""<div class="feature-card"><h4 style="color: #92400e;">🔒 الأمان والامتثال</h4>
-<p style="color: #b45309;">• نشر داخلي على خوادم الوزارة<br>• تشفير شامل للبيانات<br>• امتثال لمعايير الأمان الحكومية<br>• تسجيل شامل للأنشطة</p></div>""", unsafe_allow_html=True)
 
-# Technical specifications
+with col1:
+    st.markdown(
+        """
+##### 🤖 الذكاء الاصطناعي
+
+• توليد أسئلة عالية الجودة باستخدام GPT-4  
+• فلترة ذكية للمحتوى  
+• نماذج احتياطية مفتوحة المصدر  
+• تحسين مستمر عبر التعلم الآلي
+""",
+        unsafe_allow_html=True,
+    )
+
+with col2:
+    st.markdown(
+        """
+##### 👨‍🏫 ضمان الجودة
+
+• مراجعة شاملة من خبراء المادة  
+• تدفق موافقة متعدد المراحل  
+• معايير جودة صارمة  
+• تتبع الأداء والتحسين
+""",
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    st.markdown(
+        """
+##### 🔒 الأمان والامتثال
+
+• نشر داخلي على خوادم الوزارة  
+• تشفير شامل للبيانات  
+• امتثال لمعايير الأمان الحكومية  
+• تسجيل شامل للأنشطة
+""",
+        unsafe_allow_html=True,
+    )
+
+# ---------------------- Technical specifications ----------------------
 st.markdown("### ⚙️ المواصفات التقنية")
 col1, col2 = st.columns(2)
+
 with col1:
-    st.markdown("""
-**البنية التحتية:**
-- **الواجهة الأمامية:** React + TypeScript مع دعم RTL
-- **الخادم الخلفي:** Python FastAPI مع قواعد البيانات المحلية
-- **قاعدة البيانات:** PostgreSQL مع Redis للتخزين المؤقت
+    st.markdown(
+        """**البنية التحتية:**  
+- **الواجهة الأمامية:** React + TypeScript مع دعم RTL  
+- **الخادم الخلفي:** Python FastAPI مع قواعد البيانات المحلية  
+- **قاعدة البيانات:** PostgreSQL مع Redis للتخزين المؤقت  
 - **الذكاء الاصطناعي:** OpenAI GPT-4 + نماذج محلية
-""")
+"""  # noqa: E501
+    )
+
 with col2:
-    st.markdown("""
-**الأداء والموثوقية:**
-- **الدعم المتزامن:** 500+ مستخدم
-- **وقت الاستجابة:** أقل من 2 ثانية
-- **معدل التشغيل:** 99.9% خلال ساعات العمل
+    st.markdown(
+        """**الأداء والموثوقية:**  
+- **الدعم المتزامن:** 500+ مستخدم  
+- **وقت الاستجابة:** أقل من 2 ثانية  
+- **معدل التشغيل:** 99.9% خلال ساعات العمل  
 - **النسخ الاحتياطي:** آلي يومي
-""")
+"""
+    )
 
-# Navigation guide
+# ---------------------- Navigation guide ----------------------
 st.markdown("### 📱 دليل الاستخدام")
-st.markdown("""
+st.markdown(
+    """
 للاستفادة الكاملة من النسخة التجريبية:  
-1️⃣ توليد الأسئلة  
-استخدم الذكاء الاصطناعي لإنشاء أسئلة بـ 12 نوعاً مختلفاً  
-2️⃣ مراجعة الخبراء  
-راجع واعتمد الأسئلة المولدة قبل الاستخدام  
-3️⃣ تجميع الاختبارات  
-أنشئ اختبارات مخصصة من الأسئلة المعتمدة  
-4️⃣ تقديم الاختبار  
-جرب تجربة الطالب الكاملة مع التوقيت  
-5️⃣ التحليلات  
-استعرض التقارير والإحصائيات التفصيلية  
-💡 نصيحة: ابدأ بتوليد بعض الأسئلة، ثم اعتمدها، وأنشئ اختباراً لرؤية التدفق الكامل في العمل.
-""", unsafe_allow_html=True)
+1️⃣ **توليد الأسئلة**: استخدم الذكاء الاصطناعي لإنشاء أسئلة بـ 12 نوعاً مختلفاً  
+2️⃣ **مراجعة الخبراء**: راجع واعتمد الأسئلة المولدة قبل الاستخدام  
+3️⃣ **تجميع الاختبارات**: أنشئ اختبارات مخصصة من الأسئلة المعتمدة  
+4️⃣ **تقديم الاختبار**: جرّب تجربة الطالب الكاملة مع التوقيت  
+5️⃣ **التحليلات**: استعرض التقارير والإحصائيات التفصيلية  
 
-# System status
-st.markdown("### 🔧 حالة النظام")
+💡 **نصيحة**: ابدأ بتوليد بعض الأسئلة، ثم اعتمدها، وأنشئ اختباراً لرؤية التدفق الكامل في العمل.
+""",
+    unsafe_allow_html=True,
+)
+
+# ---------------------- System status ----------------------
+st.markdown("### 🛠️ حالة النظام")
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -195,10 +193,8 @@ with col1:
             key = st.secrets["openai"]["api_key"]
         except Exception:
             key = st.secrets.get("OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-
         if key and key.strip() and key != "your_openai_api_key_here":
-            masked = "****" + key[-4:]
-            st.success(f"🟢 اتصال OpenAI: مفتاح مكوَّن")
+            st.success("🟢 اتصال OpenAI: مفتاح مكوَّن")
         else:
             st.warning("🟡 اتصال OpenAI: غير مكوَّن")
     except Exception as e:
@@ -208,19 +204,20 @@ with col2:
     try:
         load_db()
         st.success("🟢 قاعدة البيانات: متصلة")
-    except:
+    except Exception:
         st.error("🔴 قاعدة البيانات: خطأ")
 
 with col3:
     st.success("🟢 واجهة المستخدم: تعمل")
 
-# Footer
+# ---------------------- Footer ----------------------
 st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #64748b; font-size: 14px; padding: 20px;">
-<strong>منصة تقييم القدرات المعرفية - وزارة العمل، سلطنة عُمان</strong><br>
-النسخة التجريبية المتقدمة | تم التطوير خصيصاً من أجل وزارة العمل<br>
+st.markdown(
+    """
+منصة تقييم القدرات المعرفية - وزارة العمل، سلطنة عُمان  
+النسخة التجريبية المتقدمة  
+تم التطوير خصيصاً من أجل وزارة العمل  
 جميع الحقوق محفوظة © ٢٠٢٥
-</div>
-""", unsafe_allow_html=True)
-
+""",
+    unsafe_allow_html=True,
+)
