@@ -1,4 +1,3 @@
-# pages/spacial_app.py
 # -*- coding: utf-8 -*-
 """
 Streamlit page: Arabic visual IQ question generator
@@ -9,22 +8,31 @@ Streamlit page: Arabic visual IQ question generator
 Optional: Arabic wording/explanations via a local open-source LLM using Ollama.
 
 NOTE:
-- This file is designed to live under the `pages/` directory of a Streamlit multipage app.
-- DO NOT call st.set_page_config() here; the main app (Home.py) manages it.
+- Designed to live under the `pages/` directory of a Streamlit multipage app.
+- Do NOT call st.set_page_config() here; the main app (Home.py) manages it.
 """
 
 import io
 import math
-import os
 import random
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw
-import requests
 import streamlit as st
+
+# Optional: requests (for local Ollama). Fallback if not installed.
+try:
+    import requests  # type: ignore
+except Exception:  # pragma: no cover
+    requests = None  # type: ignore
+
+# ------------------------------ Paths ------------------------------
+ROOT = Path(__file__).parents[1]  # match your existing page style
+LOGO_PATH = ROOT / "MOL_logo.png"  # optional shared logo at repo root
 
 # ------------------------------ Config ------------------------------
 AR_LETTERS = ["أ", "ب", "ج", "د"]
@@ -33,24 +41,27 @@ RNG = random.Random()
 # ------------------ LLM (optional via Ollama) ----------------------
 def ollama_chat_or_fallback(system: str, user: str, model: str, max_tokens: int = 256) -> str:
     """
-    Uses a local open-source LLM via Ollama if available; otherwise fallback Arabic text.
+    Uses a local open-source LLM via Ollama if available; otherwise returns the 'user' text.
     """
-    url = "http://localhost:11434/api/chat"
-    payload = {
-        "model": model,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "stream": False,
-        "options": {"num_predict": max_tokens},
-    }
+    if requests is None:
+        return user
     try:
-        r = requests.post(url, json=payload, timeout=8)
+        r = requests.post(
+            "http://localhost:11434/api/chat",
+            json={
+                "model": model,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "stream": False,
+                "options": {"num_predict": max_tokens},
+            },
+            timeout=8,
+        )
         if r.ok:
             out = r.json().get("message", {}).get("content", "").strip()
             if out:
                 return out
     except Exception:
         pass
-    # Fallback (no Ollama)
     return user
 
 # ---------------------- Helpers: drawing ---------------------------
@@ -58,22 +69,17 @@ def new_canvas(w: int, h: int, bg=(255, 255, 255)) -> Image.Image:
     return Image.new("RGB", (w, h), bg)
 
 def dashed_line(draw: ImageDraw.ImageDraw, start, end, dash_len=6, gap_len=6, fill=(0, 0, 0), width=1):
-    # PIL lacks native dashed lines
-    x1, y1 = start
-    x2, y2 = end
+    x1, y1 = start; x2, y2 = end
     total_len = math.hypot(x2 - x1, y2 - y1)
     if total_len == 0:
         return
-    dx = (x2 - x1) / total_len
-    dy = (y2 - y1) / total_len
+    dx = (x2 - x1) / total_len; dy = (y2 - y1) / total_len
     dist = 0
     while dist < total_len:
         s = dist
         e = min(dist + dash_len, total_len)
-        xs = x1 + dx * s
-        ys = y1 + dy * s
-        xe = x1 + dx * e
-        ye = y1 + dy * e
+        xs = x1 + dx * s; ys = y1 + dy * s
+        xe = x1 + dx * e; ye = y1 + dy * e
         draw.line((xs, ys, xe, ye), fill=fill, width=width)
         dist += dash_len + gap_len
 
@@ -89,14 +95,12 @@ def draw_triangle(draw: ImageDraw.ImageDraw, pts, fill=None, outline=(0, 0, 0), 
     draw.polygon(pts, fill=fill, outline=outline)
 
 def draw_plus(draw: ImageDraw.ImageDraw, center, size, width=6, fill=(0, 0, 0)):
-    cx, cy = center
-    s = size // 2
+    cx, cy = center; s = size // 2
     draw.line((cx - s, cy, cx + s, cy), fill=fill, width=width)
     draw.line((cx, cy - s, cx, cy + s), fill=fill, width=width)
 
 def draw_diamond(draw: ImageDraw.ImageDraw, center, size, fill=None, outline=(0, 0, 0), width=3):
-    cx, cy = center
-    s = size // 2
+    cx, cy = center; s = size // 2
     pts = [(cx, cy - s), (cx + s, cy), (cx, cy + s), (cx - s, cy)]
     draw.polygon(pts, fill=fill, outline=outline)
 
@@ -121,17 +125,12 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: b
     img = new_canvas(W, H)
     draw = ImageDraw.Draw(img)
 
-    # Fold settings
     fold_dir = RNG.choice(["h", "v"])
     base_size = 180
-
-    # Top-left: folded preview
     preview_x, preview_y = 60, 60
 
-    # Draw folded sheet outline (upper visible half)
     if fold_dir == "h":
         draw_square(draw, (preview_x, preview_y), base_size)
-        # dashed for hidden lower half
         dashed_line(draw, (preview_x, preview_y + base_size), (preview_x + base_size, preview_y + base_size), width=2)
         dashed_line(draw, (preview_x, preview_y + base_size), (preview_x, preview_y + base_size * 2), width=2)
         dashed_line(draw, (preview_x + base_size, preview_y + base_size), (preview_x + base_size, preview_y + base_size * 2), width=2)
@@ -143,8 +142,8 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: b
         dashed_line(draw, (preview_x, preview_y + base_size), (preview_x + base_size // 2, preview_y + base_size), width=2)
         dashed_line(draw, (preview_x + base_size // 2, preview_y), (preview_x + base_size // 2, preview_y + base_size), width=2)
 
-    # Punch marks
-    marks = []
+    # Marks on folded part
+    marks: List[Tuple[str, Tuple[int, int]]] = []
     if use_shapes:
         for _ in range(RNG.choice([1, 2])):
             rx = RNG.randint(20, base_size - 20)
@@ -155,10 +154,8 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: b
         ry = RNG.randint(30, base_size - 30)
         marks.append(("circle", (preview_x + rx + (0 if fold_dir == "h" else base_size // 2), preview_y + ry)))
 
-    # Draw marks on folded
-    for kind, (cx, cy) in marks:
-        if kind == "circle":
-            draw_circle(draw, (cx, cy), 12, outline=(0, 0, 0), width=4)
+    for _, (cx, cy) in marks:
+        draw_circle(draw, (cx, cy), 12, outline=(0, 0, 0), width=4)
 
     # Fold arrow
     ax = preview_x + base_size + 120
@@ -178,31 +175,25 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: b
             return (x2, y)
 
     def render_unfolded(mark_positions: List[Tuple[str, Tuple[int, int]]], wrong_variant: Optional[int] = None) -> Image.Image:
-        S = 220
-        pad = 10
+        S = 220; pad = 10
         img_opt = new_canvas(S + pad * 2, S + pad * 2)
         d = ImageDraw.Draw(img_opt)
         draw_square(d, (pad, pad), S)
 
         def map_point(px, py):
             if fold_dir == "h":
-                offx = px - preview_x
-                offy = py - preview_y
+                offx = px - preview_x; offy = py - preview_y
             else:
-                offx = px - (preview_x + base_size // 2)
-                offy = py - preview_y
+                offx = px - (preview_x + base_size // 2); offy = py - preview_y
             nx = pad + int(offx * (S / base_size))
             ny = pad + int(offy * (S / base_size))
             return nx, ny
 
         pts = [("circle", map_point(cx, cy)) for _, (cx, cy) in mark_positions]
-
         if wrong_variant is None:
             for _, (cx, cy) in mark_positions:
                 mx, my = mirror((cx, cy))
                 pts.append(("circle", map_point(mx, my)))
-        elif wrong_variant == 0:
-            pass
         elif wrong_variant == 1:
             for _, (cx, cy) in mark_positions:
                 if fold_dir == "h":
@@ -216,15 +207,10 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: b
 
         for _, (x, y) in pts:
             draw_circle(d, (x, y), 12, outline=(0, 0, 0), width=4)
-
         return img_opt
 
     correct = render_unfolded(marks, wrong_variant=None)
-    wrongs = [
-        render_unfolded(marks, wrong_variant=0),
-        render_unfolded(marks, wrong_variant=1),
-        render_unfolded(marks, wrong_variant=2),
-    ]
+    wrongs = [render_unfolded(marks, wrong_variant=i) for i in (0, 1, 2)]
     options = [correct] + wrongs
     RNG.shuffle(options)
     correct_index = options.index(correct)
@@ -255,6 +241,7 @@ def draw_quadrant_symbols(canvas_size=280, seed=0) -> Image.Image:
     return img
 
 def rotate_image_simple(img: Image.Image, angle_deg: int) -> Image.Image:
+    # Keep semantics identical to earlier app (callers pass +/- angle)
     return img.rotate(angle_deg, expand=True, fillcolor=(255, 255, 255))
 
 def quadrant_rotation_question(seed: int = 0, difficulty: str = "سهل") -> Question:
@@ -262,8 +249,8 @@ def quadrant_rotation_question(seed: int = 0, difficulty: str = "سهل") -> Que
     angle = RNG.choice([90, 180, 270])
     correct = rotate_image_simple(base, -angle)
     distract = [
-        rotate_image_simple(base, -random.choice([a for a in [90, 180, 270] if a != angle])),
-        rotate_image_simple(base, -random.choice([a for a in [90, 180, 270] if a != angle])),
+        rotate_image_simple(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
+        rotate_image_simple(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
         base.transpose(Image.FLIP_LEFT_RIGHT),
     ]
     options = [correct] + distract
@@ -325,9 +312,9 @@ def draw_iso_cubes(coords: List[Tuple[int, int, int]], size=28, img_size=(320, 2
     for i in order:
         x, y, z = coords[i]
         u, v = iso_project((x, y, z), size); u += cx; v += cy
-        top = [(u, v - size), (u + size * 0.5, v - size * 0.5), (u, v), (u - size * 0.5, v - size * 0.5)]
-        right = [(u, v), (u + size * 0.5, v - size * 0.5), (u + size * 0.5, v + size * 0.5), (u, v + size)]
-        left  = [(u, v), (u - size * 0.5, v - size * 0.5), (u - size * 0.5, v + size * 0.5), (u, v + size)]
+        top   = [(u, v - size), (u + size*0.5, v - size*0.5), (u, v), (u - size*0.5, v - size*0.5)]
+        right = [(u, v), (u + size*0.5, v - size*0.5), (u + size*0.5, v + size*0.5), (u, v + size)]
+        left  = [(u, v), (u - size*0.5, v - size*0.5), (u - size*0.5, v + size*0.5), (u, v + size)]
         d.polygon(top,   fill=(220, 220, 220), outline=(0, 0, 0))
         d.polygon(right, fill=(190, 190, 190), outline=(0, 0, 0))
         d.polygon(left,  fill=(160, 160, 160), outline=(0, 0, 0))
@@ -371,7 +358,7 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل") -> Questi
     d.arc([ax - 80, ay - 60, ax + 80, ay + 60], start=210, end=-30, fill=(0, 0, 0), width=5)
     d.polygon([(ax + 75, ay - 20), (ax + 30, ay - 10), (ax + 40, ay - 40)], fill=(0, 0, 0))
 
-    opts = []
+    opts: List[Image.Image] = []
     correct_img = draw_iso_cubes(correct_coords, img_size=(300, 260))
     opts.append(correct_img)
     used = {tuple(map(int, np.rint(R_true).flatten()))}
@@ -425,8 +412,7 @@ def shape_assembly_question(seed: int = 0) -> Question:
         def panel(imgs: List[Image.Image]) -> Image.Image:
             w = sum(i.width for i in imgs) + 20*(len(imgs)-1) + 40
             h = max(i.height for i in imgs) + 40
-            out = new_canvas(w, h)
-            x = 20
+            out = new_canvas(w, h); x = 20
             for im in imgs:
                 out.paste(im, (x, (h - im.height)//2)); x += im.width + 20
             return out
@@ -440,7 +426,6 @@ def shape_assembly_question(seed: int = 0) -> Question:
         optD = panel([tri_img(), rect])
         options = [optA, optB, optC, optD]
         correct_index = 0
-
     else:
         cx, cy, r = W - 210, 170, 110
         pts = [(cx + r*math.cos(a), cy + r*math.sin(a)) for a in np.linspace(-math.pi/2, 1.5*math.pi, 6)[:-1]]
@@ -458,8 +443,7 @@ def shape_assembly_question(seed: int = 0) -> Question:
         def panel(imgs: List[Image.Image]) -> Image.Image:
             w = sum(i.width for i in imgs) + 20*(len(imgs)-1) + 40
             h = max(i.height for i in imgs) + 40
-            out = new_canvas(w, h)
-            x = 20
+            out = new_canvas(w, h); x = 20
             for im in imgs:
                 out.paste(im, (x, (h - im.height)//2)); x += im.width + 20
             return out
@@ -481,95 +465,88 @@ def shape_assembly_question(seed: int = 0) -> Question:
     )
     return Question(title=title, image=img, options=options, correct_index=correct_index, explanation=expl)
 
-# ---------------------- Streamlit UI (Page) -----------------------
-def run_spatial_app():
-    # Sidebar (logo and settings)
-    with st.sidebar:
-        # If the logo is at repo root, this reference still works from pages/
-        try:
-            st.image("MOL_logo.png")
-        except Exception:
-            pass
-        st.markdown("### الإعدادات")
-        n_q = st.number_input("عدد الأسئلة", 1, 20, 4)
-        seed_base = st.number_input("البذرة (Seed)", 0, 10_000, 42)
-        difficulty = st.selectbox("مستوى الصعوبة", ["سهل", "متوسط"])
-        st.session_state["llm_model"] = st.text_input("نموذج Ollama (اختياري)", value="qwen2.5:3b")
-        use_llm = st.checkbox("استخدم LLM لكتابة التعليمات/الشرح", value=True)
-        st.caption("إن لم يتوفر Ollama محليًا سيستخدم نصًا افتراضيًا.")
-        puzzle_types = st.multiselect(
-            "أنواع الأسئلة",
-            ["طيّ الورق", "تدوير رباعي", "تدوير مكعّبات ثلاثي", "تركيب شكل"],
-            default=["طيّ الورق", "تدوير رباعي", "تدوير مكعّبات ثلاثي", "تركيب شكل"],
-        )
-        gen = st.button("إنشاء الأسئلة", use_container_width=True)
+# ---------------------- Streamlit Page (top-level, no page_config) ----------------------
+# Sidebar (logo + settings) — follows your existing pages' pattern
+if LOGO_PATH.exists():
+    st.sidebar.image(str(LOGO_PATH))
+st.sidebar.markdown("### الإعدادات")
+n_q = st.sidebar.number_input("عدد الأسئلة", 1, 20, 4)
+seed_base = st.sidebar.number_input("البذرة (Seed)", 0, 10_000, 42)
+difficulty = st.sidebar.selectbox("مستوى الصعوبة", ["سهل", "متوسط"])
+st.session_state["llm_model"] = st.sidebar.text_input("نموذج Ollama (اختياري)", value="qwen2.5:3b")
+use_llm = st.sidebar.checkbox("استخدم LLM لكتابة التعليمات/الشرح", value=True)
+st.sidebar.caption("إن لم يتوفر Ollama محليًا سيستخدم نصًا افتراضيًا.")
+puzzle_types = st.sidebar.multiselect(
+    "أنواع الأسئلة",
+    ["طيّ الورق", "تدوير رباعي", "تدوير مكعّبات ثلاثي", "تركيب شكل"],
+    default=["طيّ الورق", "تدوير رباعي", "تدوير مكعّبات ثلاثي", "تركيب شكل"],
+)
+gen = st.sidebar.button("إنشاء الأسئلة", use_container_width=True)
 
-    st.title("مولّد أسئلة ذكاء مرئية (مطابقة لنمط الأمثلة المرفقة)")
-    st.write(
-        "اختر النوع وعدد الأسئلة من الشريط الجانبي. جميع الرسومات تُنشأ برمجياً. "
-        "يمكنك تفعيل LLM عبر **Ollama** لإنتاج تعليمات وشرح بالعربية تلقائيًا."
+# Main content
+st.title("مولّد أسئلة ذكاء مرئية (مطابقة لنمط الأمثلة المرفقة)")
+st.write(
+    "اختر النوع وعدد الأسئلة من الشريط الجانبي. جميع الرسومات تُنشأ برمجياً. "
+    "يمكنك تفعيل LLM عبر **Ollama** لإنتاج تعليمات وشرح بالعربية تلقائيًا."
+)
+
+def build_by_type(kind: str, seed: int) -> Question:
+    if kind == "طيّ الورق":
+        return paper_fold_question(seed=seed, difficulty=difficulty)
+    if kind == "تدوير رباعي":
+        return quadrant_rotation_question(seed=seed, difficulty=difficulty)
+    if kind == "تدوير مكعّبات ثلاثي":
+        return cubes_rotation_question(seed=seed, difficulty=difficulty)
+    if kind == "تركيب شكل":
+        return shape_assembly_question(seed=seed)
+    raise ValueError("نوع غير معروف")
+
+if gen:
+    RNG.seed(seed_base)
+    generated: List[Question] = []
+    order: List[str] = []
+    while len(order) < n_q:
+        order.extend(puzzle_types)
+    order = order[:n_q]
+
+    for i, kind in enumerate(order):
+        q = build_by_type(kind, seed=seed_base + i * 7 + RNG.randint(0, 999))
+        generated.append(q)
+
+    answers_csv = io.StringIO()
+    zip_buf = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for idx, q in enumerate(generated, 1):
+            st.markdown(f"### سؤال {idx}: {q.title}")
+            st.image(q.image, use_container_width=True)
+
+            cols = st.columns(4)
+            for i, (c, col) in enumerate(zip(q.options, cols)):
+                col.image(c, use_container_width=True)
+                col.markdown(
+                    f"<div style='text-align:center;font-weight:bold;font-size:20px'>{AR_LETTERS[i]}</div>",
+                    unsafe_allow_html=True,
+                )
+                zf.writestr(f"q{idx}_opt_{i+1}.png", bytes_from_img(c))
+
+            zf.writestr(f"q{idx}_statement.png", bytes_from_img(q.image))
+            answers_csv.write(f"{idx},{AR_LETTERS[q.correct_index]}\n")
+
+            with st.expander("إظهار الحل/الشرح"):
+                st.markdown(f"**الإجابة الصحيحة:** {AR_LETTERS[q.correct_index]}")
+                st.write(q.explanation if use_llm else "الصحيح الوحيد يوافق قاعدة السؤال (انعكاس/تدوير/تجميع).")
+
+            st.divider()
+
+        zf.writestr("answers.csv", answers_csv.getvalue().encode("utf-8"))
+
+    st.download_button(
+        "تنزيل كل الأسئلة (ZIP)",
+        data=zip_buf.getvalue(),
+        file_name="arabic_visual_iq_questions.zip",
+        mime="application/zip",
+        use_container_width=True,
     )
-
-    def build_by_type(kind: str, seed: int) -> Question:
-        if kind == "طيّ الورق":
-            return paper_fold_question(seed=seed, difficulty=difficulty)
-        if kind == "تدوير رباعي":
-            return quadrant_rotation_question(seed=seed, difficulty=difficulty)
-        if kind == "تدوير مكعّبات ثلاثي":
-            return cubes_rotation_question(seed=seed, difficulty=difficulty)
-        if kind == "تركيب شكل":
-            return shape_assembly_question(seed=seed)
-        raise ValueError("نوع غير معروف")
-
-    if gen:
-        RNG.seed(seed_base)
-        generated: List[Question] = []
-        order: List[str] = []
-        while len(order) < n_q:
-            order.extend(puzzle_types)
-        order = order[:n_q]
-
-        for i, kind in enumerate(order):
-            q = build_by_type(kind, seed=seed_base + i * 7 + RNG.randint(0, 999))
-            generated.append(q)
-
-        answers_csv = io.StringIO()
-        zip_buf = io.BytesIO()
-
-        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for idx, q in enumerate(generated, 1):
-                st.markdown(f"### سؤال {idx}: {q.title}")
-                st.image(q.image, use_container_width=True)
-
-                cols = st.columns(4)
-                for i, (c, col) in enumerate(zip(q.options, cols)):
-                    col.image(c, use_container_width=True)
-                    col.markdown(
-                        f"<div style='text-align:center;font-weight:bold;font-size:20px'>{AR_LETTERS[i]}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    zf.writestr(f"q{idx}_opt_{i+1}.png", bytes_from_img(c))
-
-                zf.writestr(f"q{idx}_statement.png", bytes_from_img(q.image))
-                answers_csv.write(f"{idx},{AR_LETTERS[q.correct_index]}\n")
-
-                with st.expander("إظهار الحل/الشرح"):
-                    st.markdown(f"**الإجابة الصحيحة:** {AR_LETTERS[q.correct_index]}")
-                    st.write(q.explanation if use_llm else "الصحيح الوحيد يوافق قاعدة السؤال (انعكاس/تدوير/تجميع).")
-
-                st.divider()
-
-            zf.writestr("answers.csv", answers_csv.getvalue().encode("utf-8"))
-
-        st.download_button(
-            "تنزيل كل الأسئلة (ZIP)",
-            data=zip_buf.getvalue(),
-            file_name="arabic_visual_iq_questions.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
-    else:
-        st.info("اضغط **إنشاء الأسئلة** لبدء التوليد.")
-
-# --------- Render the page on import (no set_page_config here) ----
-run_spatial_app()
+else:
+    st.info("اضغط **إنشاء الأسئلة** لبدء التوليد.")
