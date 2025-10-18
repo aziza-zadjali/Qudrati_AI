@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # File: pages/7_spacial_questions.py
 # Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror)
-# Author: (c) 2025 for Dr. Aziza Najeeb Khamis Al Zadjali
 # Notes:
-#   - Fixes AttributeError caused by deprecated Pillow ImageDraw.textsize
-#   - Ensures placeholder tiles ("?" / "Mirror →") match neighbor tile sizes
-#   - Procedural image generation (offline), optional LLM explanations via Ollama
-#   - Export ZIP with images + JSON metadata
+#   - ASCII-only strings to avoid parsing issues in some environments.
+#   - Fixes Pillow deprecation (uses textbbox instead of textsize).
+#   - Ensures placeholder tiles match neighbor tile sizes.
+#   - Procedural generation (offline), optional LLM explanations via Ollama.
+#   - Export ZIP with images + JSON metadata.
 
 import io
 import os
@@ -18,25 +18,22 @@ import zipfile
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional, Dict
 
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from urllib import request as urlrequest
 from urllib.error import URLError
 
 
-# =========================
-# Utilities & Draw Helpers
-# =========================
+# ----------------------------
+# Utilities and draw helpers
+# ----------------------------
 
 def make_rng(seed: Optional[int]) -> random.Random:
-    """Create a reproducible RNG."""
     if seed is None:
-        seed = int(time.time() * 1000) % 2_147_483_647
+        seed = int(time.time() * 1000) % 2147483647
     return random.Random(seed)
 
 def _load_font(font_size: int):
-    """Robust font loader across environments."""
     try:
         return ImageFont.truetype("DejaVuSans.ttf", font_size)
     except Exception:
@@ -49,20 +46,18 @@ def text_image(text: str, size=(380, 380), font_size=42,
                color=(30, 30, 30), bg=(255, 255, 255)) -> Image.Image:
     """
     Create an image with centered text. Compatible with Pillow 10+ (no textsize).
-    Uses textbbox preferred; falls back gracefully.
+    Uses textbbox; fallback to textlength approximation.
     """
     img = Image.new("RGB", size, bg)
     d = ImageDraw.Draw(img)
     font = _load_font(font_size)
-
     try:
-        bbox = d.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+        bbox = d.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         x = (size[0] - w) / 2 - bbox[0]
         y = (size[1] - h) / 2 - bbox[1]
     except Exception:
-        # Very old Pillow fallback
         try:
             w = int(d.textlength(text, font=font))
         except Exception:
@@ -70,34 +65,31 @@ def text_image(text: str, size=(380, 380), font_size=42,
         h = int(font_size * 1.2)
         x = (size[0] - w) / 2
         y = (size[1] - h) / 2
-
     d.text((x, y), text, fill=color, font=font)
     return img
 
 def _rotate_points(points, angle_deg, origin):
     angle = math.radians(angle_deg)
     ox, oy = origin
-    rotated = []
+    out = []
     for x, y in points:
         qx = ox + math.cos(angle) * (x - ox) - math.sin(angle) * (y - oy)
         qy = oy + math.sin(angle) * (x - ox) + math.cos(angle) * (y - oy)
-        rotated.append((qx, qy))
-    return rotated
-
-def _draw_polygon(draw: ImageDraw.ImageDraw, pts, fill, outline, width):
-    """Draw a filled polygon with a separate outlined border of given width (robust across Pillow versions)."""
+        out.append((qx, qy))
+    return out
+def _draw_polygon(draw, pts, fill, outline, width):
     draw.polygon(pts, fill=fill)
     pts_closed = list(pts) + [pts[0]]
-    draw.line(pts_closed, fill=outline, width=width, joint="curve")
+    try:
+        draw.line(pts_closed, fill=outline, width=width, joint="curve")
+    except TypeError:
+        draw.line(pts_closed, fill=outline, width=width)
 
-def draw_shape(draw: ImageDraw.ImageDraw, shape: str, center: Tuple[int, int], size: int,
+def draw_shape(draw, shape: str, center: Tuple[int, int], size: int,
                rotation_deg: float = 0, fill=(20, 20, 20), outline=(20, 20, 20), width: int = 4):
-    """Draws a basic geometric shape (circle/square/triangle/pentagon) with rotation."""
     cx, cy = center
     r = size // 2
-
     if shape == "circle":
-        # Filled circle with outline
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill, outline=outline, width=width)
     elif shape == "square":
         pts = [(cx - r, cy - r), (cx + r, cy - r), (cx + r, cy + r), (cx - r, cy + r)]
@@ -115,19 +107,16 @@ def draw_shape(draw: ImageDraw.ImageDraw, shape: str, center: Tuple[int, int], s
         pts = _rotate_points(pts, rotation_deg, (cx, cy))
         _draw_polygon(draw, pts, fill=fill, outline=outline, width=width)
     else:
-        # fallback cross
         draw.line([cx - r, cy, cx + r, cy], fill=outline, width=width)
         draw.line([cx, cy - r, cx, cy + r], fill=outline, width=width)
 
 def compose_grid(images: List[Image.Image], grid_size: Tuple[int, int], pad: int = 16, bg=(255, 255, 255)) -> Image.Image:
-    """Compose individual same-sized tiles into a single image grid."""
     rows, cols = grid_size
     assert len(images) == rows * cols, "compose_grid: image count must equal rows*cols"
     w, h = images[0].size
-    # Ensure all tiles have the same size
     for im in images:
         if im.size != (w, h):
-            raise ValueError(f"compose_grid: Tile size mismatch {im.size} vs {(w, h)}")
+            raise ValueError(f"compose_grid: tile size mismatch {im.size} vs {(w, h)}")
     W = cols * w + (cols + 1) * pad
     H = rows * h + (rows + 1) * pad
     canvas = Image.new("RGB", (W, H), bg)
@@ -139,9 +128,9 @@ def compose_grid(images: List[Image.Image], grid_size: Tuple[int, int], pad: int
     return canvas
 
 
-# ===============
-# Data Model
-# ===============
+# ----------------------------
+# Data model for export
+# ----------------------------
 
 @dataclass
 class ChoiceItem:
@@ -163,30 +152,29 @@ class QuestionPackage:
     meta: Dict
 
 
-# =======================
-# Generators (Puzzles)
-# =======================
+# ----------------------------
+# Puzzle generators
+# ----------------------------
 
 SHAPES = ["circle", "square", "triangle", "pentagon"]
 COLORS = [
-    (30, 30, 30),     # dark gray
-    (0, 88, 155),     # blue
-    (200, 0, 0),      # red
-    (0, 140, 70),     # green
-    (220, 120, 0),    # orange
-    (120, 0, 160),    # purple
+    (30, 30, 30),      # dark gray
+    (0, 88, 155),      # blue
+    (200, 0, 0),       # red
+    (0, 140, 70),      # green
+    (220, 120, 0),     # orange
+    (120, 0, 160),     # purple
 ]
 
 def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shape_size=160, difficulty="Medium"):
     """
-    Generates a 3x3 matrix where the bottom-right is missing.
-    Rules (choose 1–3 based on difficulty):
+    Generate a 3x3 matrix where the bottom-right tile is missing (question mark).
+    Rules considered:
       - Rotation increases by fixed step per column
       - Count of shapes increases per row
-      - Color alternates by row or column
-      - Size changes by fixed step per row
+      - Color alternates by row or by column
+      - Size changes by a fixed step per row
     """
-    # Difficulty parameters
     if difficulty == "Easy":
         rules_to_use = 1
         rotation_step_choices = [0, 45, 90]
@@ -197,37 +185,37 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         rules_to_use = 2
         rotation_step_choices = [30, 45, 60, 90]
 
-    # Select rules
     use_rotation = use_count = use_color = use_size = False
     for s in rng.sample(["rotation", "count", "color", "size"], rules_to_use):
-        if s == "rotation": use_rotation = True
-        if s == "count":    use_count = True
-        if s == "color":    use_color = True
-        if s == "size":     use_size = True
+        if s == "rotation":
+            use_rotation = True
+        elif s == "count":
+            use_count = True
+        elif s == "color":
+            use_color = True
+        elif s == "size":
+            use_size = True
 
     rotation_step = rng.choice(rotation_step_choices) if use_rotation else 0
     base_count = rng.randint(1, 2) if use_count else 1
     base_size = cell_shape_size
     size_step = rng.choice([-20, 20]) if use_size else 0
     base_color_idx = rng.randrange(len(COLORS)) if use_color else 0
-    color_by_row = rng.random() < 0.5 if use_color else True  # decide once
+    color_by_row = (rng.random() < 0.5) if use_color else True
 
     shape = rng.choice(SHAPES)
 
-    # Build 3x3 images (row-major), last cell is '?' placeholder
     grid_imgs = []
     rule_desc_parts = []
     for r in range(3):
         for c in range(3):
             if r == 2 and c == 2:
-                # placeholder cell (question)
                 grid_imgs.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32)))
                 continue
 
             img = Image.new("RGB", img_size, (255, 255, 255))
             d = ImageDraw.Draw(img)
 
-            # determine attributes per cell (r, c)
             rot = (c * rotation_step) % 360 if use_rotation else 0
             count = base_count + r if use_count else 1
             size_px = max(50, base_size + r * size_step) if use_size else base_size
@@ -236,18 +224,19 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
                 color_idx = (base_color_idx + shift) % len(COLORS)
             else:
                 color_idx = base_color_idx
-            # draw multiple shapes in a tidy arrangement
-            cols = int(math.ceil(math.sqrt(count)))
-            rows = int(math.ceil(count / cols))
+
+            cols_cnt = int(math.ceil(math.sqrt(count)))
+            rows_cnt = int(math.ceil(count / cols_cnt))
             grid_w, grid_h = img_size
             margin = 30
-            cell_w = (grid_w - 2 * margin) // cols
-            cell_h = (grid_h - 2 * margin) // rows
+            cell_w = (grid_w - 2 * margin) // cols_cnt
+            cell_h = (grid_h - 2 * margin) // rows_cnt
             mini_size = min(size_px, int(0.8 * min(cell_w, cell_h)))
             k = 0
-            for rr in range(rows):
-                for cc in range(cols):
-                    if k >= count: break
+            for rr in range(rows_cnt):
+                for cc in range(cols_cnt):
+                    if k >= count:
+                        break
                     cx = margin + cc * cell_w + cell_w // 2
                     cy = margin + rr * cell_h + cell_h // 2
                     draw_shape(d, shape, (cx, cy), mini_size, rotation_deg=rot,
@@ -255,7 +244,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
                     k += 1
             grid_imgs.append(img)
 
-    # Determine correct attributes for (2,2)
     correct_rot = (2 * rotation_step) % 360 if use_rotation else 0
     correct_count = base_count + 2 if use_count else 1
     correct_size = max(50, base_size + 2 * size_step) if use_size else base_size
@@ -265,21 +253,21 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
     else:
         color_idx_correct = base_color_idx
 
-    # Render correct answer image
     def render_multi(count, rot, sz, color_idx):
         img = Image.new("RGB", img_size, (255, 255, 255))
         d = ImageDraw.Draw(img)
-        cols = int(math.ceil(math.sqrt(count)))
-        rows = int(math.ceil(count / cols))
+        cols_cnt = int(math.ceil(math.sqrt(count)))
+        rows_cnt = int(math.ceil(count / cols_cnt))
         grid_w, grid_h = img_size
         margin = 30
-        cell_w = (grid_w - 2 * margin) // cols
-        cell_h = (grid_h - 2 * margin) // rows
+        cell_w = (grid_w - 2 * margin) // cols_cnt
+        cell_h = (grid_h - 2 * margin) // rows_cnt
         mini_size2 = min(sz, int(0.8 * min(cell_w, cell_h)))
         k2 = 0
-        for rr in range(rows):
-            for cc in range(cols):
-                if k2 >= count: break
+        for rr in range(rows_cnt):
+            for cc in range(cols_cnt):
+                if k2 >= count:
+                    break
                 cx = margin + cc * cell_w + cell_w // 2
                 cy = margin + rr * cell_h + cell_h // 2
                 draw_shape(d, shape, (cx, cy), mini_size2, rotation_deg=rot,
@@ -289,7 +277,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
 
     correct_img = render_multi(correct_count, correct_rot, correct_size, color_idx_correct)
 
-    # Distractors: tweak one dimension each (if rule present), fill to at least 3 distractors
     def make_distractor(var: str):
         cnt, rot, sz, col = correct_count, correct_rot, correct_size, color_idx_correct
         if var == "rotation":
@@ -304,30 +291,37 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         return render_multi(cnt, rot, sz, col)
 
     distractor_kinds = []
-    if use_rotation: distractor_kinds.append("rotation")
-    if use_count:    distractor_kinds.append("count")
-    if use_size:     distractor_kinds.append("size")
-    if use_color:    distractor_kinds.append("color")
+    if use_rotation:
+        distractor_kinds.append("rotation")
+    if use_count:
+        distractor_kinds.append("count")
+    if use_size:
+        distractor_kinds.append("size")
+    if use_color:
+        distractor_kinds.append("color")
     while len(distractor_kinds) < 3:
         distractor_kinds.append(rng.choice(["rotation", "count", "size", "color"]))
 
     choices_imgs = [correct_img] + [make_distractor(k) for k in distractor_kinds]
     rng.shuffle(choices_imgs)
 
-    # Rule description
-    if use_rotation: rule_desc_parts.append(f"Rotation increases by {rotation_step}° across columns.")
-    if use_count:    rule_desc_parts.append("Number of shapes increases by 1 down the rows.")
-    if use_color:    rule_desc_parts.append(f"Color alternates by {'row' if color_by_row else 'column'}.")
-    if use_size:     rule_desc_parts.append(f"Shape size changes by {size_step:+d}px per row.")
+    if use_rotation:
+        rule_desc_parts.append(f"Rotation increases by {rotation_step} deg across columns.")
+    if use_count:
+        rule_desc_parts.append("Number of shapes increases by 1 down the rows.")
+    if use_color:
+        rule_desc_parts.append(f"Color alternates by {'row' if color_by_row else 'column'}.")
+    if use_size:
+        rule_desc_parts.append(f"Shape size changes by {size_step:+d} px per row.")
 
     rule_desc = " ".join(rule_desc_parts) if rule_desc_parts else "Follow the visual pattern."
-    prompt_text = "Which option completes the 3×3 matrix?"
+    prompt_text = "Which option completes the 3x3 matrix?"
 
     return {
         "grid_imgs": grid_imgs,
         "grid_size": (3, 3),
         "choices_imgs": choices_imgs,
-        "correct_index": choices_imgs.index(correct_img),
+        "correct_index": choices.index(correct_img),
         "shape": shape,
         "rule_desc": rule_desc,
         "prompt": prompt_text,
@@ -346,9 +340,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
     }
 
 def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_size=200, difficulty="Medium"):
-    """
-    Show a single shape rotating by a fixed angle each step; ask for the next.
-    """
     steps = 3 if difficulty == "Easy" else (4 if difficulty == "Medium" else 5)
     shape = rng.choice(SHAPES)
     step_angle = rng.choice([30, 45, 60, 90])
@@ -363,14 +354,12 @@ def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_si
                    rotation_deg=(start_angle + i * step_angle) % 360, fill=color, outline=(10, 10, 10), width=5)
         seq_imgs.append(img)
 
-    # Correct next
     correct_rot = (start_angle + steps * step_angle) % 360
     correct_img = Image.new("RGB", img_size, (255, 255, 255))
     d = ImageDraw.Draw(correct_img)
     draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
                rotation_deg=correct_rot, fill=color, outline=(10, 10, 10), width=5)
 
-    # Distractors
     choices = [correct_img]
     for delta_mult in [1, -1, 2]:
         img = Image.new("RGB", img_size, (255, 255, 255))
@@ -381,7 +370,7 @@ def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_si
         choices.append(img)
     rng.shuffle(choices)
 
-    rule_desc = f"The figure rotates by {step_angle}° each step."
+    rule_desc = f"The figure rotates by {step_angle} deg each step."
     prompt_text = "Select the next figure in the rotation sequence."
 
     return {
@@ -400,11 +389,8 @@ def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_si
     }
 
 def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=220, difficulty="Medium"):
-    """
-    Show a base figure and ask for its mirror (left-right or top-bottom).
-    """
     shape = rng.choice(SHAPES)
-    mirror_axis = rng.choice(["horizontal", "vertical"])  # horizontal = flip top/bottom; vertical = flip left/right
+    mirror_axis = rng.choice(["horizontal", "vertical"])
     rotation_deg = rng.choice([0, 15, 30, 45, 60, 75, 90])
     color = rng.choice(COLORS)
 
@@ -413,10 +399,7 @@ def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=2
     draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
                rotation_deg=rotation_deg, fill=color, outline=(10, 10, 10), width=5)
 
-    # Correct mirrored version
     correct = base.transpose(Image.FLIP_LEFT_RIGHT) if mirror_axis == "vertical" else base.transpose(Image.FLIP_TOP_BOTTOM)
-
-    # Distractors: wrong axis and rotations
     wrong1 = base.transpose(Image.FLIP_TOP_BOTTOM) if mirror_axis == "vertical" else base.transpose(Image.FLIP_LEFT_RIGHT)
     wrong2 = base.rotate(180)
     wrong3 = base.rotate(90)
@@ -442,15 +425,11 @@ def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=2
     }
 
 
-# ======================
+# ----------------------------
 # Optional LLM via Ollama
-# ======================
+# ----------------------------
 
 def ollama_chat(endpoint: str, model: str, prompt: str, temperature: float = 0.2, timeout: int = 30) -> Optional[str]:
-    """
-    Minimal HTTP call to Ollama /api/generate for a single-turn completion.
-    Returns the final text or None on error.
-    """
     url = endpoint.rstrip("/") + "/api/generate"
     payload = json.dumps({
         "model": model,
@@ -474,7 +453,7 @@ def build_llm_prompt(question_type: str, rule_desc: str, prompt_text: str,
     labels = [chr(ord('A') + i) for i in range(choices_n)]
     return (
         "You are preparing concise explanations for spatial IQ questions.\n"
-        "Provide ONLY a short 2–4 sentence explanation and the final answer label.\n"
+        "Provide ONLY a short 2-4 sentence explanation and the final answer label.\n"
         "Do NOT reveal chain-of-thought; just state the rule and why the answer fits.\n"
         f"Question type: {question_type}\n"
         f"Prompt: {prompt_text}\n"
@@ -487,41 +466,39 @@ def build_llm_prompt(question_type: str, rule_desc: str, prompt_text: str,
     )
 
 
-# ============
+# ----------------------------
 # Streamlit UI
-# ============
-
+# ----------------------------
 st.set_page_config(page_title="Spatial IQ Generator", layout="wide")
-
-st.title("🧠 Spatial IQ Question Generator")
+st.title("Spatial IQ Question Generator")
 
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("Settings")
 
     q_type = st.selectbox(
         "Question type",
-        ["Matrix (3×3)", "Rotation Sequence", "Mirror Image"],
+        ["Matrix (3x3)", "Rotation Sequence", "Mirror Image"],
         index=0
     )
     difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
     seed_input = st.text_input("Seed (optional for reproducibility)", value="")
 
     st.markdown("---")
-    st.subheader("🧩 Output Options")
-    show_guides = st.checkbox("Show section labels (e.g., 'Question', 'Choices')", value=True)
-    include_llm = st.checkbox("Use open‑source LLM for explanations (via Ollama)", value=False)
+    st.subheader("Output Options")
+    show_guides = st.checkbox("Show section labels (Question, Choices)", value=True)
+    include_llm = st.checkbox("Use open-source LLM for explanations (via Ollama)", value=False)
     ollama_host = st.text_input("Ollama endpoint", value=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"))
     ollama_model = st.text_input("Model", value=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"))
     temperature = st.slider("LLM temperature", 0.0, 1.0, 0.2, 0.05)
 
     st.markdown("---")
-    st.subheader("📎 Reference (optional)")
+    st.subheader("Reference (optional)")
     ref_files = st.file_uploader("Upload sample question images (to display as reference)",
                                  type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 colQ, colA = st.columns([2.1, 1.4])
 
-# Random seed init
+# RNG init
 seed = None
 if seed_input.strip():
     try:
@@ -531,7 +508,8 @@ if seed_input.strip():
 rng = make_rng(seed)
 
 # Generate on button or first load
-if st.button("Generate New Question", type="primary") or "qpack" not in st.session_state:
+trigger = st.button("Generate New Question", type="primary") or ("qpack" not in st.session_state)
+if trigger:
     if q_type.startswith("Matrix"):
         pack = generate_matrix_reasoning(rng, difficulty=difficulty)
         q_id = f"matrix-{int(time.time())}"
@@ -546,7 +524,6 @@ if st.button("Generate New Question", type="primary") or "qpack" not in st.sessi
     elif q_type.startswith("Rotation"):
         pack = generate_rotation_sequence(rng, difficulty=difficulty)
         q_id = f"rotation-{int(time.time())}"
-        # Compose sequence row + placeholder of the SAME TILE SIZE
         seq = pack["sequence_imgs"]
         tile_size = seq[0].size
         q_font = max(28, int(tile_size[0] * 0.28))
@@ -558,14 +535,13 @@ if st.button("Generate New Question", type="primary") or "qpack" not in st.sessi
         meta = pack["meta"]
         qtype_meta = "rotation"
 
-    else:  # Mirror
+    else:
         pack = generate_mirror_choice(rng, difficulty=difficulty)
         q_id = f"mirror-{int(time.time())}"
         base = pack["base_img"]
-        # Placeholder of the SAME TILE SIZE
         tile_size = base.size
         m_font = max(22, int(tile_size[0] * 0.12))
-        problem_img = compose_grid([base, text_image("Mirror →", size=tile_size, font_size=m_font)], (1, 2))
+        problem_img = compose_grid([base, text_image("Mirror ->", size=tile_size, font_size=m_font)], (1, 2))
         choices_imgs = pack["choices_imgs"]
         correct_index = pack["correct_index"]
         prompt_text = pack["prompt"]
@@ -573,16 +549,13 @@ if st.button("Generate New Question", type="primary") or "qpack" not in st.sessi
         meta = pack["meta"]
         qtype_meta = "mirror"
 
-    # Prepare choices with labels
     labels = [chr(ord('A') + i) for i in range(len(choices_imgs))]
     labeled_choices = []
     for i, img in enumerate(choices_imgs):
         overlay = img.copy()
         d = ImageDraw.Draw(overlay)
-        # Label box
         box_w, box_h = 64, 54
         d.rectangle([10, 10, 10 + box_w, 10 + box_h], fill=(245, 245, 245), outline=(30, 30, 30), width=2)
-        # Centered label using textbbox
         try:
             font = ImageFont.truetype("DejaVuSans.ttf", 32)
         except Exception:
@@ -602,13 +575,11 @@ if st.button("Generate New Question", type="primary") or "qpack" not in st.sessi
         d.text((tx, ty), label, fill=(10, 10, 10), font=font)
         labeled_choices.append(overlay)
 
-    # Optional LLM explanation
     llm_expl = None
     if include_llm:
         prompt = build_llm_prompt(qtype_meta, rule_desc, prompt_text, len(labels), labels[correct_index])
         llm_expl = ollama_chat(ollama_host, ollama_model, prompt, temperature=temperature)
 
-    # Save in session
     st.session_state.qpack = {
         "id": q_id,
         "type": qtype_meta,
@@ -625,7 +596,7 @@ if st.button("Generate New Question", type="primary") or "qpack" not in st.sessi
         "meta": meta
     }
 
-# Render UI
+# Render
 qp = st.session_state.get("qpack")
 if qp:
     with colQ:
@@ -642,33 +613,29 @@ if qp:
         if show_guides:
             st.subheader("Choices")
         chosen = st.radio("Select your answer:", qp["labels"], index=0, horizontal=True, label_visibility="collapsed")
-        cols = st.columns(2)
+        cols2 = st.columns(2)
         for i, img in enumerate(qp["choices_imgs"]):
-            with cols[i % 2]:
+            with cols2[i % 2]:
                 st.image(img, caption=f"Option {qp['labels'][i]}", use_column_width=True)
 
         if st.button("Check answer"):
             if chosen == qp["correct_label"]:
-                st.success(f"✅ Correct! Answer: {qp['correct_label']}")
+                st.success(f"Correct. Answer: {qp['correct_label']}")
             else:
-                st.error(f"❌ Not quite. Correct answer: {qp['correct_label']}")
-
-            st.markdown("**Why:** " + qp["rule_description"])
+                st.error(f"Not quite. Correct answer: {qp['correct_label']}")
+            st.markdown("Why: " + qp["rule_description"])
             if qp["llm_explanation"]:
-                st.markdown("**LLM explanation:** " + qp["llm_explanation"])
+                st.markdown("LLM explanation: " + qp["llm_explanation"])
 
-        # Export
         st.markdown("---")
         st.subheader("Export")
         filename = f"{qp['id']}.zip"
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            # write problem image
             pb = io.BytesIO()
             qp["problem_img"].save(pb, format="PNG")
             zf.writestr("problem.png", pb.getvalue())
 
-            # write choices
             choice_items = []
             for i, img in enumerate(qp["choices_imgs"]):
                 cfname = f"choice_{qp['labels'][i]}.png"
@@ -681,7 +648,6 @@ if qp:
                     image_filename=cfname
                 ))
 
-            # write metadata
             qpkg = QuestionPackage(
                 id=qp["id"],
                 type=qp["type"],
@@ -696,5 +662,4 @@ if qp:
             )
             zf.writestr("question.json", json.dumps(asdict(qpkg), indent=2))
 
-        st.download_button("⬇️ Download ZIP", data=buf.getvalue(), file_name=filename, mime="application/zip")
-``
+        st.download_button("Download ZIP", data=buf.getvalue(), file_name=filename, mime="application/zip")
