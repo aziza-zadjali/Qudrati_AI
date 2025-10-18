@@ -2,13 +2,12 @@
 # File: pages/7_spacial_questions.py
 # Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror, Sample)
 # Notes:
-#   - Adds "Sample (Image)" mode to use an uploaded image as the question.
-#   - Button in sidebar, optional auto-generate on settings change.
-#   - ASCII-only strings to avoid parsing issues in some environments.
-#   - Pillow 10+ safe (uses textbbox instead of textsize).
+#   - ASCII-only strings (no emojis or special symbols).
+#   - Pillow 10+ compatible (uses textbbox, no textsize).
 #   - Ensures placeholder tiles match neighbor tile sizes.
+#   - Sidebar Generate button + optional auto-generate on settings change.
 #   - Export ZIP with images + JSON metadata.
-#   - Streamlit: use_container_width (no deprecated use_column_width).
+#   - Streamlit: use_container_width only (no deprecated flags).
 
 import io
 import os
@@ -19,6 +18,7 @@ import random
 import zipfile
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional, Dict
+
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from urllib import request as urlrequest
@@ -43,7 +43,7 @@ def _load_font(font_size: int):
         except Exception:
             return ImageFont.load_default()
 
-def text_image(text: str, size=(380, 380), font_size=42,
+def text_image(text: str, size: Tuple[int, int] = (380, 380), font_size: int = 42,
                color=(30, 30, 30), bg=(255, 255, 255)) -> Image.Image:
     """
     Create an image with centered text. Compatible with Pillow 10+ (no textsize).
@@ -160,23 +160,15 @@ class QuestionPackage:
 
 SHAPES = ["circle", "square", "triangle", "pentagon"]
 COLORS = [
-    (30, 30, 30),      # dark gray
-    (0, 88, 155),      # blue
-    (200, 0, 0),       # red
-    (0, 140, 70),      # green
-    (220, 120, 0),     # orange
-    (120, 0, 160),     # purple
+    (30, 30, 30),
+    (0, 88, 155),
+    (200, 0, 0),
+    (0, 140, 70),
+    (220, 120, 0),
+    (120, 0, 160),
 ]
 
 def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shape_size=160, difficulty="Medium"):
-    """
-    Generate a 3x3 matrix where the bottom-right tile is missing (question mark).
-    Rules considered:
-      - Rotation increases by fixed step per column
-      - Count of shapes increases per row
-      - Color alternates by row or by column
-      - Size changes by a fixed step per row
-    """
     if difficulty == "Easy":
         rules_to_use = 1
         rotation_step_choices = [0, 45, 90]
@@ -233,7 +225,8 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             k = 0
             for rr in range(rows_cnt):
                 for cc in range(cols_cnt):
-                    if k >= count: break
+                    if k >= count:
+                        break
                     cx = margin + cc * cell_w + cell_w // 2
                     cy = margin + rr * cell_h + cell_h // 2
                     draw_shape(d, shape, (cx, cy), mini_size, rotation_deg=rot,
@@ -263,7 +256,8 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         k2 = 0
         for rr in range(rows_cnt):
             for cc in range(cols_cnt):
-                if k2 >= count: break
+                if k2 >= count:
+                    break
                 cx = margin + cc * cell_w + cell_w // 2
                 cy = margin + rr * cell_h + cell_h // 2
                 draw_shape(d, shape, (cx, cy), mini_size2, rotation_deg=rot,
@@ -493,7 +487,6 @@ with st.sidebar:
     if q_type.startswith("Sample"):
         st.markdown("---")
         st.subheader("Sample Settings")
-        # Let user choose which uploaded file to use as the question
         if ref_files:
             names = [f.name for f in ref_files]
             default_idx = 0
@@ -501,7 +494,6 @@ with st.sidebar:
                 default_idx = names.index(st.session_state.sample_sel_name)
             sel_name = st.selectbox("Choose image", names, index=default_idx)
             st.session_state.sample_sel_name = sel_name
-            # Save selected bytes to session (persist across reruns)
             for f in ref_files:
                 if f.name == sel_name:
                     st.session_state.sample_image_bytes = f.getvalue()
@@ -510,7 +502,7 @@ with st.sidebar:
             st.info("Upload the sample question image above to use it as the problem.")
 
         sample_options_n = st.number_input("Number of options", min_value=2, max_value=6, value=4, step=1)
-        letters_tmp = [chr(ord('A') + i) for i in range(sample_options_n)]
+        letters_tmp = [chr(ord('A') + i) for i in range(int(sample_options_n))]
         default_label = st.session_state.get("sample_correct_label", "A")
         if default_label not in letters_tmp:
             default_label = letters_tmp[0]
@@ -546,7 +538,6 @@ current_settings = {
     "ollama_host": ollama_host,
     "ollama_model": ollama_model,
     "temperature": temperature,
-    # Sample mode related (include even if not used to allow auto-generate when toggled)
     "sample_sel_name": st.session_state.get("sample_sel_name"),
     "sample_options_n": int(sample_options_n),
     "sample_correct_label": st.session_state.get("sample_correct_label", "A"),
@@ -555,9 +546,9 @@ current_settings = {
 }
 prev_settings = st.session_state.get("prev_settings")
 settings_changed = (prev_settings is not None) and (prev_settings != current_settings)
-st.session_state.prev_settings = current_settings  # update for next run
+st.session_state.prev_settings = current_settings
 
-# Decide trigger: first load OR sidebar button OR auto-generate on change
+# Decide trigger
 trigger = ("qpack" not in st.session_state) or trigger_sidebar or (auto_generate and settings_changed)
 
 if trigger:
@@ -601,12 +592,10 @@ if trigger:
         qtype_meta = "mirror"
 
     else:
-        # Sample (Image) mode
+        # Sample (Image)
         q_id = f"sample-{int(time.time())}"
-        # Load selected sample image from session or from first uploaded
         sample_bytes = st.session_state.get("sample_image_bytes")
         if (sample_bytes is None) and ref_files:
-            # Default to the first uploaded if no selection persisted
             sample_bytes = ref_files[0].getvalue()
             st.session_state.sample_sel_name = ref_files[0].name
             st.session_state.sample_image_bytes = sample_bytes
@@ -617,10 +606,8 @@ if trigger:
             except Exception:
                 problem_img = text_image("Could not open image", size=(800, 600), font_size=36)
         else:
-            # No image uploaded yet; show a helpful placeholder
             problem_img = text_image("Upload a sample image in the sidebar", size=(1000, 320), font_size=36)
 
-        # Build placeholder choice tiles A.. (since many sample images already contain choices inside)
         n_opts = int(sample_options_n)
         labels_sample = [chr(ord('A') + i) for i in range(n_opts)]
         choices_imgs = [text_image(lbl, size=(420, 420), font_size=140) for lbl in labels_sample]
@@ -638,7 +625,7 @@ if trigger:
             "options_count": n_opts
         }
 
-    # Prepare choices with overlays (uniform UX)
+    # Prepare choices with overlays
     labels = [chr(ord('A') + i) for i in range(len(choices_imgs))]
     labeled_choices = []
     for i, img in enumerate(choices_imgs):
@@ -668,12 +655,7 @@ if trigger:
     # Optional LLM explanation
     llm_expl = None
     if include_llm:
-        # For sample mode: the rule_desc is provided by user
-        qtype_for_llm = qtype_meta
-        prompt_for_llm = prompt_text
-        labels_for_llm = labels
-        correct_label_for_llm = labels[correct_index]
-        llm_prompt = build_llm_prompt(qtype_for_llm, rule_desc, prompt_for_llm, len(labels_for_llm), correct_label_for_llm)
+        llm_prompt = build_llm_prompt(qtype_meta, rule_desc, prompt_text, len(labels), labels[correct_index])
         llm_expl = ollama_chat(ollama_host, ollama_model, llm_prompt, temperature=temperature)
 
     st.session_state.qpack = {
@@ -695,12 +677,18 @@ if trigger:
 # Render
 qp = st.session_state.get("qpack")
 if qp:
+    colQ, colA = st.columns([2.1, 1.4])
     with colQ:
         if show_guides:
             st.subheader("Question")
         st.image(qp["problem_img"], use_container_width=True)
         st.write(qp["prompt"])
 
+        # Show uploaded references as an expandable gallery
+        if "ref_files_cache" not in st.session_state:
+            st.session_state.ref_files_cache = None
+        if "ref_files_cache" in st.session_state and ref_files:
+            st.session_state.ref_files_cache = ref_files
         if ref_files:
             with st.expander("Reference samples (uploaded)"):
                 st.image(ref_files, use_container_width=True)
@@ -759,4 +747,3 @@ if qp:
             zf.writestr("question.json", json.dumps(asdict(qpkg), indent=2))
 
         st.download_button("Download ZIP", data=buf.getvalue(), file_name=filename, mime="application/zip")
-``
