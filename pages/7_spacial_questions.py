@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 # File: pages/7_spacial_questions.py
-# Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror)
+# Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror, Sample)
 # Notes:
-#   - Button relocated to sidebar near settings for better UX.
-#   - Optional: Auto-generate when settings change.
+#   - Adds "Sample (Image)" mode to use an uploaded image as the question.
+#   - Button in sidebar, optional auto-generate on settings change.
 #   - ASCII-only strings to avoid parsing issues in some environments.
-#   - Fixes Pillow deprecation (uses textbbox instead of textsize).
+#   - Pillow 10+ safe (uses textbbox instead of textsize).
 #   - Ensures placeholder tiles match neighbor tile sizes.
-#   - Procedural generation (offline), optional LLM explanations via Ollama.
 #   - Export ZIP with images + JSON metadata.
-#   - Updated: replaced deprecated use_column_width with use_container_width.
+#   - Streamlit: use_container_width (no deprecated use_column_width).
 
 import io
 import os
@@ -20,7 +19,6 @@ import random
 import zipfile
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional, Dict
-
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from urllib import request as urlrequest
@@ -191,14 +189,10 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
 
     use_rotation = use_count = use_color = use_size = False
     for s in rng.sample(["rotation", "count", "color", "size"], rules_to_use):
-        if s == "rotation":
-            use_rotation = True
-        elif s == "count":
-            use_count = True
-        elif s == "color":
-            use_color = True
-        elif s == "size":
-            use_size = True
+        if s == "rotation": use_rotation = True
+        elif s == "count":  use_count = True
+        elif s == "color":  use_color = True
+        elif s == "size":   use_size = True
 
     rotation_step = rng.choice(rotation_step_choices) if use_rotation else 0
     base_count = rng.randint(1, 2) if use_count else 1
@@ -239,8 +233,7 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             k = 0
             for rr in range(rows_cnt):
                 for cc in range(cols_cnt):
-                    if k >= count:
-                        break
+                    if k >= count: break
                     cx = margin + cc * cell_w + cell_w // 2
                     cy = margin + rr * cell_h + cell_h // 2
                     draw_shape(d, shape, (cx, cy), mini_size, rotation_deg=rot,
@@ -270,8 +263,7 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         k2 = 0
         for rr in range(rows_cnt):
             for cc in range(cols_cnt):
-                if k2 >= count:
-                    break
+                if k2 >= count: break
                 cx = margin + cc * cell_w + cell_w // 2
                 cy = margin + rr * cell_h + cell_h // 2
                 draw_shape(d, shape, (cx, cy), mini_size2, rotation_deg=rot,
@@ -295,28 +287,20 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         return render_multi(cnt, rot, sz, col)
 
     distractor_kinds = []
-    if use_rotation:
-        distractor_kinds.append("rotation")
-    if use_count:
-        distractor_kinds.append("count")
-    if use_size:
-        distractor_kinds.append("size")
-    if use_color:
-        distractor_kinds.append("color")
+    if use_rotation: distractor_kinds.append("rotation")
+    if use_count:    distractor_kinds.append("count")
+    if use_size:     distractor_kinds.append("size")
+    if use_color:    distractor_kinds.append("color")
     while len(distractor_kinds) < 3:
         distractor_kinds.append(rng.choice(["rotation", "count", "size", "color"]))
 
     choices_imgs = [correct_img] + [make_distractor(k) for k in distractor_kinds]
     rng.shuffle(choices_imgs)
 
-    if use_rotation:
-        rule_desc_parts.append(f"Rotation increases by {rotation_step} deg across columns.")
-    if use_count:
-        rule_desc_parts.append("Number of shapes increases by 1 down the rows.")
-    if use_color:
-        rule_desc_parts.append(f"Color alternates by {'row' if color_by_row else 'column'}.")
-    if use_size:
-        rule_desc_parts.append(f"Shape size changes by {size_step:+d} px per row.")
+    if use_rotation: rule_desc_parts.append(f"Rotation increases by {rotation_step} deg across columns.")
+    if use_count:    rule_desc_parts.append("Number of shapes increases by 1 down the rows.")
+    if use_color:    rule_desc_parts.append(f"Color alternates by {'row' if color_by_row else 'column'}.")
+    if use_size:     rule_desc_parts.append(f"Shape size changes by {size_step:+d} px per row.")
 
     rule_desc = " ".join(rule_desc_parts) if rule_desc_parts else "Follow the visual pattern."
     prompt_text = "Which option completes the 3x3 matrix?"
@@ -482,7 +466,7 @@ with st.sidebar:
 
     q_type = st.selectbox(
         "Question type",
-        ["Matrix (3x3)", "Rotation Sequence", "Mirror Image"],
+        ["Matrix (3x3)", "Rotation Sequence", "Mirror Image", "Sample (Image)"],
         index=0
     )
     difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
@@ -498,8 +482,43 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Reference (optional)")
-    ref_files = st.file_uploader("Upload sample question images (to display as reference)",
+    ref_files = st.file_uploader("Upload sample question images (to display or use as a question)",
                                  type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+    # Sample mode controls
+    sample_options_n = 4
+    sample_correct_label = "A"
+    sample_prompt = "Answer the question shown in the image."
+    sample_rule = "As shown in the image."
+    if q_type.startswith("Sample"):
+        st.markdown("---")
+        st.subheader("Sample Settings")
+        # Let user choose which uploaded file to use as the question
+        if ref_files:
+            names = [f.name for f in ref_files]
+            default_idx = 0
+            if "sample_sel_name" in st.session_state and st.session_state.sample_sel_name in names:
+                default_idx = names.index(st.session_state.sample_sel_name)
+            sel_name = st.selectbox("Choose image", names, index=default_idx)
+            st.session_state.sample_sel_name = sel_name
+            # Save selected bytes to session (persist across reruns)
+            for f in ref_files:
+                if f.name == sel_name:
+                    st.session_state.sample_image_bytes = f.getvalue()
+                    break
+        else:
+            st.info("Upload the sample question image above to use it as the problem.")
+
+        sample_options_n = st.number_input("Number of options", min_value=2, max_value=6, value=4, step=1)
+        letters_tmp = [chr(ord('A') + i) for i in range(sample_options_n)]
+        default_label = st.session_state.get("sample_correct_label", "A")
+        if default_label not in letters_tmp:
+            default_label = letters_tmp[0]
+        sample_correct_label = st.selectbox("Correct label", letters_tmp, index=letters_tmp.index(default_label))
+        st.session_state.sample_correct_label = sample_correct_label
+
+        sample_prompt = st.text_input("Prompt", "Answer the question shown in the image.")
+        sample_rule = st.text_input("Rule/Why", "As shown in the image.")
 
     st.markdown("---")
     st.subheader("Generate")
@@ -527,6 +546,12 @@ current_settings = {
     "ollama_host": ollama_host,
     "ollama_model": ollama_model,
     "temperature": temperature,
+    # Sample mode related (include even if not used to allow auto-generate when toggled)
+    "sample_sel_name": st.session_state.get("sample_sel_name"),
+    "sample_options_n": int(sample_options_n),
+    "sample_correct_label": st.session_state.get("sample_correct_label", "A"),
+    "sample_prompt": sample_prompt,
+    "sample_rule": sample_rule,
 }
 prev_settings = st.session_state.get("prev_settings")
 settings_changed = (prev_settings is not None) and (prev_settings != current_settings)
@@ -561,7 +586,7 @@ if trigger:
         meta = pack["meta"]
         qtype_meta = "rotation"
 
-    else:
+    elif q_type.startswith("Mirror"):
         pack = generate_mirror_choice(rng, difficulty=difficulty)
         q_id = f"mirror-{int(time.time())}"
         base = pack["base_img"]
@@ -575,6 +600,45 @@ if trigger:
         meta = pack["meta"]
         qtype_meta = "mirror"
 
+    else:
+        # Sample (Image) mode
+        q_id = f"sample-{int(time.time())}"
+        # Load selected sample image from session or from first uploaded
+        sample_bytes = st.session_state.get("sample_image_bytes")
+        if (sample_bytes is None) and ref_files:
+            # Default to the first uploaded if no selection persisted
+            sample_bytes = ref_files[0].getvalue()
+            st.session_state.sample_sel_name = ref_files[0].name
+            st.session_state.sample_image_bytes = sample_bytes
+
+        if sample_bytes:
+            try:
+                problem_img = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
+            except Exception:
+                problem_img = text_image("Could not open image", size=(800, 600), font_size=36)
+        else:
+            # No image uploaded yet; show a helpful placeholder
+            problem_img = text_image("Upload a sample image in the sidebar", size=(1000, 320), font_size=36)
+
+        # Build placeholder choice tiles A.. (since many sample images already contain choices inside)
+        n_opts = int(sample_options_n)
+        labels_sample = [chr(ord('A') + i) for i in range(n_opts)]
+        choices_imgs = [text_image(lbl, size=(420, 420), font_size=140) for lbl in labels_sample]
+        correct_label_now = st.session_state.get("sample_correct_label", "A")
+        if correct_label_now not in labels_sample:
+            correct_label_now = labels_sample[0]
+        correct_index = labels_sample.index(correct_label_now)
+
+        prompt_text = sample_prompt
+        rule_desc = sample_rule
+        qtype_meta = "sample"
+        meta = {
+            "type": "sample",
+            "sample_filename": st.session_state.get("sample_sel_name"),
+            "options_count": n_opts
+        }
+
+    # Prepare choices with overlays (uniform UX)
     labels = [chr(ord('A') + i) for i in range(len(choices_imgs))]
     labeled_choices = []
     for i, img in enumerate(choices_imgs):
@@ -601,10 +665,16 @@ if trigger:
         d.text((tx, ty), label, fill=(10, 10, 10), font=font)
         labeled_choices.append(overlay)
 
+    # Optional LLM explanation
     llm_expl = None
     if include_llm:
-        prompt = build_llm_prompt(qtype_meta, rule_desc, prompt_text, len(labels), labels[correct_index])
-        llm_expl = ollama_chat(ollama_host, ollama_model, prompt, temperature=temperature)
+        # For sample mode: the rule_desc is provided by user
+        qtype_for_llm = qtype_meta
+        prompt_for_llm = prompt_text
+        labels_for_llm = labels
+        correct_label_for_llm = labels[correct_index]
+        llm_prompt = build_llm_prompt(qtype_for_llm, rule_desc, prompt_for_llm, len(labels_for_llm), correct_label_for_llm)
+        llm_expl = ollama_chat(ollama_host, ollama_model, llm_prompt, temperature=temperature)
 
     st.session_state.qpack = {
         "id": q_id,
@@ -689,3 +759,4 @@ if qp:
             zf.writestr("question.json", json.dumps(asdict(qpkg), indent=2))
 
         st.download_button("Download ZIP", data=buf.getvalue(), file_name=filename, mime="application/zip")
+``
