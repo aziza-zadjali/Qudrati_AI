@@ -7,7 +7,7 @@ Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
 - Shape assembly (which set forms the target?)
 - Difficulty tiers: سهل / متوسط / صعب
 - Thick, crisp strokes (STYLE + render scale)
-- NEW: Reference image is shown clearly on the page (separate from stem)
+- Reference image is shown clearly on the page (separate from stem)
 
 File path: pages/7_spacial_questions.py
 """
@@ -206,7 +206,7 @@ def draw_rot_arrow(caption: str = "", bold: bool = False) -> Image.Image:
     return canvas.convert("RGB")
 
 
-def faint_hint_box(side=220, text="؟") -> Image.Image:
+def faint_hint_box(side: int = 220, text: str = "؟") -> Image.Image:
     img = new_canvas(side, side)
     d = ImageDraw.Draw(img)
     draw_square(d, (10, 10), img.width - 20, outline=(150, 150, 150), width=max(2, STYLE["square"] - 2))
@@ -245,7 +245,7 @@ def images_unique(imgs: List[Image.Image]) -> bool:
 @dataclass
 class Question:
     title: str
-    ref_image: Image.Image         # << visible reference shown separately
+    ref_image: Image.Image         # visible reference shown separately
     image: Image.Image             # stem panel (arrow/hint)
     options: List[Image.Image]
     correct_index: int
@@ -284,7 +284,7 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool
         draw_circle(d, (x, y), int(12 * CANVAS_SCALE))
 
     # Stem: suggest the action
-    stem = hstack(ref.copy(), draw_rot_arrow(caption="افتح", bold=True), faint_hint_box("؟"))
+    stem = hstack(ref.copy(), draw_rot_arrow(caption="افتح", bold=True), faint_hint_box(text="؟"))
 
     def mirror(p):
         x, y = p
@@ -294,6 +294,7 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool
 
     def render_unfolded(correct=True, jitter=0):
         img = new_canvas(base_size, base_size)
+        dd = ImageDraw.ImageDraw(img)
         dd = ImageDraw.Draw(img)
         draw_square(dd, (10, 10), img.width - 20)
         for (x, y) in pts:
@@ -419,7 +420,7 @@ def board_diag(canvas_size=260, seed=0, variable_mode: bool = True, difficulty: 
 
 
 def stem_with_rotation(source_img: Image.Image, angle: int) -> Image.Image:
-    return hstack(source_img, draw_rot_arrow(caption=f"{angle}°", bold=True), faint_hint_box("؟"))
+    return hstack(source_img, draw_rot_arrow(caption=f"{angle}°", bold=True), faint_hint_box(text="؟"))
 
 
 def rotate_image(img: Image.Image, angle_deg: int, allow_mirror=False) -> Image.Image:
@@ -585,7 +586,7 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
     # Reference = original 3D model
     ref = draw_iso_cubes(shape, img_size=(260, 240))
     angle_txt = RNG.choice(["90°", "180°", "270°"])
-    stem = hstack(ref.copy(), draw_rot_arrow(caption=f"دوِّر {angle_txt}", bold=True), faint_hint_box("؟"))
+    stem = hstack(ref.copy(), draw_rot_arrow(caption=f"دوِّر {angle_txt}", bold=True), faint_hint_box(text="؟"))
 
     R_true = RNG.choice(ORIENTS)
     correct_coords = apply_rot(shape, R_true)
