@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit Visual IQ Question Generator (Arabic/English, translation wrappers)
+Streamlit Visual IQ Question Generator (Arabic, full code with translation wrappers)
 """
 
 import io
@@ -238,7 +238,8 @@ def faint_hint_box(side: int = 220, text: str = "؟") -> Image.Image:
     return img
 
 def bytes_from_img(img: Image.Image) -> bytes:
-    buf = io.BytesIO(); img.save(buf, format="PNG")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
     return buf.getvalue()
 
 @dataclass
@@ -315,7 +316,7 @@ def compose_stem(reference:Image.Image, banner_text:str) -> Image.Image:
     qbox = faint_hint_box(text="[translate:؟]")
     return _finalize_for_display(hstack(ref, arrow, qbox))
 
-# ========== QUESTION BUILDERS ========== #
+# ========== Question Builders with LLM fallback ========== #
 def ollama_chat_or_fallback(system: str, user: str, model: str, enabled: bool = True, max_tokens: int = 256) -> str:
     try:
         import requests
@@ -613,7 +614,7 @@ if gen:
         for idx, kind in enumerate(order, 1):
             qseed = seed_base ^ (RNG.randint(1, 1_000_000_007) + idx*9973)
             q = build_by_type(kind, seed=qseed)
-            st.markdown(f"#### {_[ 'question' ]} {idx}: {q.title}")
+            st.markdown(f"#### {_('question')} {idx}: {q.title}")
             st.image(q.stem_image, use_container_width=True, output_format="PNG", caption=f"{_('alt_question')} {idx}")
             cols = st.columns(4, gap="small")
             for i, (c, col) in enumerate(zip(q.options, cols)):
