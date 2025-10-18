@@ -2,16 +2,15 @@
 # File: pages/7_spacial_questions.py
 # Title: Spatial IQ Generator (Folding Challenge + Mimic Sample)
 #
-# What you get:
-#   - Folding Challenge (now with diagonal folds): generates paper-folding IQ items
-#   - Mimic Sample (Simple): extract style (palette/stroke) from an uploaded sample and generate a 3x3 matrix in that style
+# Key features:
+#   - Folding Challenge with diagonal folds (UL, UR, DL, DR)
+#   - Mimic Sample (Simple): extract style from an uploaded image and generate a 3x3 matrix in that style
 #   - Brand Palette controls + Style Presets (save/load/delete)
-#   - One-click Batch generation (ZIP with images + JSON metadata)
-#
-# Implementation notes:
-#   - ASCII-only strings to avoid AST/Syntax issues
+#   - Batch generation (ZIP with problem, choices, metadata)
+# Notes:
+#   - ASCII-only strings to avoid AST parsing issues
 #   - Pillow 10+ compatible (textbbox; no textsize)
-#   - Streamlit: use_container_width (no deprecated flags)
+#   - Streamlit: use_container_width only
 
 import io
 import os
@@ -29,7 +28,7 @@ from urllib import request as urlrequest
 from urllib.error import URLError
 
 # ----------------------------
-# Hardening: fonts and RNG
+# Utilities
 # ----------------------------
 
 def make_rng(seed: Optional[int]) -> random.Random:
@@ -129,13 +128,12 @@ def compose_grid(images: List[Image.Image], grid_size: Tuple[int, int], pad: int
     return canvas
 
 # ----------------------------
-# Presets handling (persist to JSON if possible)
+# Presets (persist to JSON if possible)
 # ----------------------------
 
 PRESETS_FILE = "style_presets.json"
 
 def _load_presets() -> Dict[str, Dict]:
-    # Try session first (fast), fallback to file
     if "style_presets" in st.session_state:
         return st.session_state.style_presets
     data = {}
@@ -154,11 +152,10 @@ def _save_presets(data: Dict[str, Dict]):
         with open(PRESETS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception:
-        # On read-only FS, at least keep in session
-        pass
+        pass  # read-only FS: keep in session
 
 # ----------------------------
-# Style extraction for Mimic
+# Style extraction (Mimic Sample)
 # ----------------------------
 
 def extract_style_from_image(img: Image.Image, n_colors: int = 6) -> Dict:
@@ -175,17 +172,13 @@ def extract_style_from_image(img: Image.Image, n_colors: int = 6) -> Dict:
             rgb = tuple(palette[idx * 3: idx * 3 + 3])
             colors_freq.append((count, rgb))
         colors_freq.sort(key=lambda x: x[0], reverse=True)
-    # Background = most frequent
     bg = colors_freq[0][1] if colors_freq else (255, 255, 255)
-
     def lum(c): return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
     unique = [rgb for _, rgb in colors_freq] or [(30, 30, 30), (240, 240, 240)]
     outline = min(unique, key=lum)
-    # Fills = remaining colors excluding bg
     fills = [c for c in unique if c != bg] or [(30, 30, 30), (0, 88, 155), (200, 0, 0)]
     stroke_width = 5 if img.width < 800 else (6 if img.width < 1400 else 8)
     text_color = (20, 20, 20) if lum(bg) > 186 else (240, 240, 240)
-    # Paper fill slightly lighter or darker than bg
     paper_fill = tuple(min(255, int(bg[i] * 1.02)) for i in range(3))
     return {
         "bg": bg,
@@ -197,7 +190,7 @@ def extract_style_from_image(img: Image.Image, n_colors: int = 6) -> Dict:
     }
 
 # ----------------------------
-# Data model for export
+# Data model
 # ----------------------------
 
 @dataclass
@@ -220,7 +213,7 @@ class QuestionPackage:
     meta: Dict
 
 # ----------------------------
-# Matrix generator (Mimic Sample)
+# Matrix (Mimic Sample) generator
 # ----------------------------
 
 DEFAULT_COLORS = [
@@ -381,22 +374,15 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
 # ----------------------------
 
 def reflect_point(p, axis):
-    """
-    Reflect point p=(x,y) across a fold axis through the origin:
-      V: vertical axis (x=0)
-      H: horizontal axis (y=0)
-      D1: diagonal y = x
-      D2: diagonal y = -x
-    """
     x, y = p
     if axis == "V":
         return (-x, y)
     if axis == "H":
         return (x, -y)
-    if axis == "D1":
-        return (y, x)       # swap across y=x
-    if axis == "D2":
-        return (-y, -x)     # reflect across y=-x
+    if axis == "D1":  # y = x
+        return (y, x)
+    if axis == "D2":  # y = -x
+        return (-y, -x)
     return (x, y)
 
 def unfold_points(base_point: Tuple[float, float], folds_axes: List[str]) -> List[Tuple[float, float]]:
@@ -437,12 +423,10 @@ def draw_paper_with_holes(size=(420, 420), holes: List[Tuple[float, float]],
 
 def _arrow(d: ImageDraw.ImageDraw, start, end, color, width):
     d.line([start, end], fill=color, width=width)
-    # simple triangle head sized from width
     vx = end[0] - start[0]
     vy = end[1] - start[1]
     L = math.hypot(vx, vy) or 1.0
     ux, uy = vx / L, vy / L
-    # perpendicular
     px, py = -uy, ux
     head_len = max(14, width * 3)
     head_w = max(10, width * 2)
@@ -455,11 +439,6 @@ def _arrow(d: ImageDraw.ImageDraw, start, end, color, width):
 def draw_fold_icon(direction: str, size=(180, 180),
                    bg=(255, 255, 255), paper_fill=(250, 250, 250),
                    outline=(20, 20, 20), stroke=4) -> Image.Image:
-    """
-    direction:
-      L, R, U, D for cardinal folds
-      UL, UR, DL, DR for diagonals (towards Up-Left, Up-Right, Down-Left, Down-Right)
-    """
     W, H = size
     img = Image.new("RGB", size, bg)
     d = ImageDraw.Draw(img)
@@ -469,10 +448,8 @@ def draw_fold_icon(direction: str, size=(180, 180),
     right = W - margin
     bottom = H - margin
     d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
-
     cx, cy = W // 2, H // 2
     Llen = min(W, H) // 3
-
     if direction == "L":
         start, end = (cx + Llen // 2, cy), (cx - Llen, cy)
     elif direction == "R":
@@ -489,7 +466,6 @@ def draw_fold_icon(direction: str, size=(180, 180),
         start, end = (cx + Llen // 2, cy - Llen // 2), (cx - Llen, cy + Llen)
     else:  # "DR"
         start, end = (cx - Llen // 2, cy - Llen // 2), (cx + Llen, cy + Llen)
-
     _arrow(d, start, end, outline, stroke)
     return img
 
@@ -505,7 +481,6 @@ def draw_folded_with_punch(point_folded: Tuple[float, float], size=(220, 220),
     right = W - margin
     bottom = H - margin
     d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
-
     x, y = point_folded
     px = (x + 1) / 2.0 * (right - left) + left
     py = (1 - (y + 1) / 2.0) * (bottom - top) + top
@@ -515,64 +490,43 @@ def draw_folded_with_punch(point_folded: Tuple[float, float], size=(220, 220),
         font = ImageFont.truetype("DejaVuSans.ttf", 18)
     except Exception:
         font = ImageFont.load_default()
-    txt = "Punch"
-    try:
-        bbox = d.textbbox((0, 0), txt, font=font)
-        th = bbox[3] - bbox[1]
-    except Exception:
-        th = 18
-    d.text((left, top - th - 4), txt, fill=text_color, font=font)
+    d.text((left, top - 22), "Punch", fill=text_color, font=font)
     return img
 
 def generate_folding_challenge(rng: random.Random, difficulty="Medium",
                                allow_diagonal=True,
                                style: Optional[Dict] = None):
-    # Style
     bg = (style.get("bg") if style else None) or (255, 255, 255)
     paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
     outline = (style.get("outline") if style else None) or (20, 20, 20)
     stroke = (style.get("stroke_width") if style else None) or 5
     text_color = (style.get("text_color") if style else None) or (20, 20, 20)
-
-    # Difficulty -> number of folds
     if difficulty == "Easy":
         n_folds = rng.choice([1, 2])
     elif difficulty == "Hard":
         n_folds = 3
     else:
         n_folds = rng.choice([2, 3])
-
-    # Directions including diagonals
     dirs_card = ["L", "R", "U", "D"]
     dirs_diag = ["UL", "UR", "DL", "DR"]
     dirs_all = dirs_card + (dirs_diag if allow_diagonal else [])
-
     folds = []
     for i in range(n_folds):
         cand = rng.choice(dirs_all) if i == 0 else rng.choice([d for d in dirs_all if d != folds[-1]])
         folds.append(cand)
-
-    # Map directions to axes: V/H/D1/D2
     def dir_to_axis(d):
         if d in ("L", "R"): return "V"
         if d in ("U", "D"): return "H"
-        if d in ("UL", "DR"): return "D1"  # y=x
-        return "D2"  # UR, DL => y=-x
-
+        if d in ("UL", "DR"): return "D1"
+        return "D2"
     axes = [dir_to_axis(d) for d in folds]
-
-    # Choose a punch point, keep away from borders
     px = rng.uniform(-0.65, 0.65)
     py = rng.uniform(-0.65, 0.65)
     point_folded = (px, py)
-
     holes = unfold_points(point_folded, axes)
-
-    # Build problem: row of fold icons + final folded punch
     fold_icons = [draw_fold_icon(d, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke) for d in folds]
     row1 = compose_grid(fold_icons, (1, len(fold_icons))) if len(fold_icons) > 0 else text_image("No folds", bg=bg, color=outline)
     punch_panel = draw_folded_with_punch(point_folded, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, text_color=text_color)
-
     W = max(row1.size[0], punch_panel.size[0]) + 32
     H = row1.size[1] + punch_panel.size[1] + 48
     problem_img = Image.new("RGB", (W, H), bg)
@@ -580,17 +534,12 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     problem_img.paste(row1, (x1, 16))
     x2 = (W - punch_panel.size[0]) // 2
     problem_img.paste(punch_panel, (x2, row1.size[1] + 32))
-
-    # Correct unfolded
     correct_img = draw_paper_with_holes(holes=holes, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke)
-
-    # Distractors
     if len(axes) > 0:
         holes_d1 = unfold_points(point_folded, axes[:-1])
     else:
         holes_d1 = [(px, py)]
     d1 = draw_paper_with_holes(holes=holes_d1, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke)
-
     if len(axes) > 0:
         wrong_axes = axes.copy()
         idx = rng.randrange(len(wrong_axes))
@@ -599,15 +548,11 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     else:
         holes_d2 = [(-px, py)]
     d2 = draw_paper_with_holes(holes=holes_d2, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke)
-
     d3 = correct_img.rotate(90, expand=False)
-
     choices = [correct_img, d1, d2, d3]
     rng.shuffle(choices)
     correct_index = choices.index(correct_img)
-
     rule_desc = "Unfold symmetrically across each fold line. Each fold mirrors the hole positions; the final pattern is the union of all mirrored holes."
-
     return {
         "problem_img": problem_img,
         "choices_imgs": choices,
@@ -623,7 +568,7 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     }
 
 # ----------------------------
-# Optional LLM via Ollama
+# Optional LLM (Ollama)
 # ----------------------------
 
 def ollama_chat(endpoint: str, model: str, prompt: str, temperature: float = 0.2, timeout: int = 30) -> Optional[str]:
@@ -663,7 +608,7 @@ def build_llm_prompt(question_type: str, rule_desc: str, prompt_text: str,
     )
 
 # ----------------------------
-# Streamlit UI (Simplified)
+# Streamlit UI
 # ----------------------------
 
 st.set_page_config(page_title="Spatial IQ Generator", layout="wide")
@@ -677,62 +622,57 @@ with st.sidebar:
     difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
     seed_input = st.text_input("Seed (optional)", value="", help="Leave empty for a new random seed.")
 
-    # Brand Palette
     st.markdown("---")
     st.header("Brand Palette")
     presets = _load_presets()
     preset_names = ["(none)"] + sorted(presets.keys())
     chosen_preset = st.selectbox("Load preset", preset_names, index=0)
-    colp1, colp2 = st.columns(2)
-    with colp1:
-        bg_hex = st.text_input("Background hex", value=st.session_state.get("bg_hex", "#FFFFFF"))
-        paper_hex = st.text_input("Paper fill hex", value=st.session_state.get("paper_hex", "#FAFAFA"))
-        outline_hex = st.text_input("Outline hex", value=st.session_state.get("outline_hex", "#141414"))
-    with colp2:
-        text_hex = st.text_input("Text hex", value=st.session_state.get("text_hex", "#141414"))
-        stroke_w = st.number_input("Stroke width", min_value=2, max_value=12, value=int(st.session_state.get("stroke_w", 5)), step=1)
-        allow_diag = st.checkbox("Allow diagonal folds (folding mode)", value=True)
 
-    def _hex_to_rgb(h):
-        try:
-            h = h.strip().lstrip("#")
-            if len(h) == 3:
-                h = "".join([c*2 for c in h])
-            if len(h) != 6: return (255,255,255)
-            return tuple(int(h[i:i+2], 16) for i in (0,2,4))
-        except Exception:
-            return (255,255,255)
+    def _hex_default(key, default):
+        return st.session_state.get(key, default)
 
-    # Apply preset if selected
+    bg_hex = st.text_input("Background hex", value=_hex_default("bg_hex", "#FFFFFF"))
+    paper_hex = st.text_input("Paper fill hex", value=_hex_default("paper_hex", "#FAFAFA"))
+    outline_hex = st.text_input("Outline hex", value=_hex_default("outline_hex", "#141414"))
+    text_hex = st.text_input("Text hex", value=_hex_default("text_hex", "#141414"))
+    stroke_w = st.number_input("Stroke width", min_value=2, max_value=12, value=int(_hex_default("stroke_w", 5)), step=1)
+    allow_diag = st.checkbox("Allow diagonal folds (folding mode)", value=True)
+
     if chosen_preset != "(none)":
-        p = presets[chosen_preset]
+        p = presets.get(chosen_preset, {})
         bg_hex = p.get("bg_hex", bg_hex)
         paper_hex = p.get("paper_hex", paper_hex)
         outline_hex = p.get("outline_hex", outline_hex)
         text_hex = p.get("text_hex", text_hex)
         stroke_w = int(p.get("stroke_w", stroke_w))
 
-    # Save recent values to session
     st.session_state.bg_hex = bg_hex
     st.session_state.paper_hex = paper_hex
     st.session_state.outline_hex = outline_hex
     st.session_state.text_hex = text_hex
     st.session_state.stroke_w = stroke_w
 
-    st.caption("Tip: You can save these colors as a preset for your team.")
+    def _hex_to_rgb(h):
+        try:
+            h = h.strip().lstrip("#")
+            if len(h) == 3:
+                h = "".join([c*2 for c in h])
+            if len(h) != 6:
+                return (255, 255, 255)
+            return (int(h[0:2],16), int(h[2:4],16), int(h[4:6],16))
+        except Exception:
+            return (255, 255, 255)
 
-    # Preset save/delete
+    st.caption("Tip: Save your palette as a preset for fast reuse.")
     new_preset_name = st.text_input("Preset name")
     colpr1, colpr2 = st.columns(2)
     with colpr1:
         if st.button("Save preset", use_container_width=True):
             if new_preset_name.strip():
                 presets[new_preset_name.strip()] = {
-                    "bg_hex": bg_hex,
-                    "paper_hex": paper_hex,
-                    "outline_hex": outline_hex,
-                    "text_hex": text_hex,
-                    "stroke_w": stroke_w
+                    "bg_hex": bg_hex, "paper_hex": paper_hex,
+                    "outline_hex": outline_hex, "text_hex": text_hex,
+                    "stroke_w": int(stroke_w)
                 }
                 _save_presets(presets)
                 st.success(f"Saved preset: {new_preset_name.strip()}")
@@ -745,16 +685,14 @@ with st.sidebar:
                 _save_presets(presets)
                 st.success(f"Deleted preset: {chosen_preset}")
 
-    # Mimic Sample upload (style extraction)
     sample_bytes = None
     if q_type.startswith("Mimic"):
         st.markdown("---")
-        st.header("Sample for style")
+        st.header("Sample for style (optional)")
         f = st.file_uploader("Upload a sample image", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
         if f:
             sample_bytes = f.getvalue()
 
-    # LLM optional
     st.markdown("---")
     st.header("LLM Explanation (optional)")
     include_llm = st.checkbox("Use Ollama", value=False)
@@ -762,7 +700,6 @@ with st.sidebar:
     ollama_model = st.text_input("Model", value=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"))
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
 
-    # Generate and Batch
     st.markdown("---")
     st.header("Generate")
     gen_btn = st.button("Generate New Question", type="primary", use_container_width=True)
@@ -772,11 +709,22 @@ with st.sidebar:
     batch_btn = st.button("Generate Batch ZIP", use_container_width=True)
 
 # Build style dict from palette
+def _hex_to_rgb_inline(h):
+    try:
+        h = h.strip().lstrip("#")
+        if len(h) == 3:
+            h = "".join([c*2 for c in h])
+        if len(h) != 6:
+            return (255, 255, 255)
+        return (int(h[0:2],16), int(h[2:4],16), int(h[4:6],16))
+    except Exception:
+        return (255, 255, 255)
+
 style_palette = {
-    "bg": _hex_to_rgb(st.session_state.bg_hex),
-    "paper_fill": _hex_to_rgb(st.session_state.paper_hex),
-    "outline": _hex_to_rgb(st.session_state.outline_hex),
-    "text_color": _hex_to_rgb(st.session_state.text_hex),
+    "bg": _hex_to_rgb_inline(st.session_state.bg_hex),
+    "paper_fill": _hex_to_rgb_inline(st.session_state.paper_hex),
+    "outline": _hex_to_rgb_inline(st.session_state.outline_hex),
+    "text_color": _hex_to_rgb_inline(st.session_state.text_hex),
     "stroke_width": int(st.session_state.stroke_w),
 }
 
@@ -789,7 +737,7 @@ if seed_input.strip():
         seed = abs(hash(seed_input)) % (2**31)
 rng = make_rng(seed)
 
-# Helper to synthesize one question pack for current settings
+# Helper to generate one item
 def _make_one(rng_local: random.Random):
     if q_type.startswith("Folding"):
         pack = generate_folding_challenge(rng_local, difficulty=difficulty, allow_diagonal=allow_diag, style=style_palette)
@@ -807,9 +755,7 @@ def _make_one(rng_local: random.Random):
             try:
                 im = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
                 ext = extract_style_from_image(im)
-                # Blend: keep brand bg/outline if set, but use sample fills for variety
                 style["fills"] = ext.get("fills", DEFAULT_COLORS)
-                # If brand palette is (none), ext bg/outline already assigned above; we respect brand overrides set by user
             except Exception:
                 pass
         pack = generate_matrix_reasoning(rng_local, difficulty=difficulty, style=style)
@@ -821,7 +767,6 @@ def _make_one(rng_local: random.Random):
         rule_desc = pack["rule_desc"]
         meta = pack["meta"]
         qtype_meta = "mimic"
-
     labels = [chr(ord('A') + i) for i in range(len(choices_imgs))]
     labeled_choices = []
     for i, img in enumerate(choices_imgs):
@@ -847,12 +792,10 @@ def _make_one(rng_local: random.Random):
         ty = 10 + (box_h - th) / 2
         d.text((tx, ty), label, fill=(10, 10, 10), font=font)
         labeled_choices.append(overlay)
-
     llm_expl = None
     if include_llm:
         llm_prompt = build_llm_prompt(qtype_meta, rule_desc, prompt_text, len(labels), labels[correct_index])
         llm_expl = ollama_chat(ollama_host, ollama_model, llm_prompt, temperature=temperature)
-
     return {
         "id": q_id,
         "type": qtype_meta,
@@ -869,7 +812,7 @@ def _make_one(rng_local: random.Random):
         "meta": meta
     }
 
-# Single generate on click or first load
+# Generate once or on click
 if ("qpack" not in st.session_state) or gen_btn:
     st.session_state.qpack = _make_one(rng)
 
@@ -881,7 +824,6 @@ if qp:
         st.subheader("Question")
         st.image(qp["problem_img"], use_container_width=True)
         st.write(qp["prompt"])
-
     with colA:
         st.subheader("Choices")
         chosen = st.radio("Select your answer:", qp["labels"], index=0, horizontal=True, label_visibility="collapsed")
@@ -889,7 +831,6 @@ if qp:
         for i, img in enumerate(qp["choices_imgs"]):
             with cols2[i % 2]:
                 st.image(img, caption=f"Option {qp['labels'][i]}", use_container_width=True)
-
         if st.button("Check answer"):
             if chosen == qp["correct_label"]:
                 st.success(f"Correct. Answer: {qp['correct_label']}")
@@ -898,7 +839,6 @@ if qp:
             st.markdown("Why: " + qp["rule_description"])
             if qp["llm_explanation"]:
                 st.markdown("LLM explanation: " + qp["llm_explanation"])
-
     st.markdown("---")
     st.subheader("Export")
     filename = f"{qp['id']}.zip"
@@ -907,7 +847,6 @@ if qp:
         pb = io.BytesIO()
         qp["problem_img"].save(pb, format="PNG")
         zf.writestr("problem.png", pb.getvalue())
-
         choice_items = []
         for i, img in enumerate(qp["choices_imgs"]):
             cfname = f"choice_{qp['labels'][i]}.png"
@@ -919,7 +858,6 @@ if qp:
                 is_correct=(i == qp["correct_index"]),
                 image_filename=cfname
             ))
-
         qpkg = QuestionPackage(
             id=qp["id"],
             type=qp["type"],
@@ -933,10 +871,8 @@ if qp:
             meta=qp["meta"]
         )
         zf.writestr("question.json", json.dumps(asdict(qpkg), indent=2))
-
     st.download_button("Download ZIP", data=buf.getvalue(), file_name=filename, mime="application/zip")
 
-    # Batch generation
     if batch_btn:
         batch_buf = io.BytesIO()
         with zipfile.ZipFile(batch_buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -944,16 +880,13 @@ if qp:
             for k in range(int(batch_n)):
                 rng_local = make_rng((seed or 0) + k + 1)
                 pack = _make_one(rng_local)
-                # Write problem
                 pb = io.BytesIO()
                 pack["problem_img"].save(pb, format="PNG")
                 zf.writestr(f"{pack['id']}/problem.png", pb.getvalue())
-                # Write choices
                 for i, img in enumerate(pack["choices_imgs"]):
                     cb = io.BytesIO()
                     img.save(cb, format="PNG")
                     zf.writestr(f"{pack['id']}/choice_{pack['labels'][i]}.png", cb.getvalue())
-                # Write metadata
                 choice_items = [
                     {"label": pack["labels"][i], "is_correct": (i == pack["correct_index"]), "image_filename": f"choice_{pack['labels'][i]}.png"}
                     for i in range(len(pack["choices_imgs"]))
@@ -972,7 +905,6 @@ if qp:
                 }
                 zf.writestr(f"{pack['id']}/question.json", json.dumps(meta_one, indent=2))
                 master_meta.append(meta_one)
-            # Also write a master index
             zf.writestr("index.json", json.dumps(master_meta, indent=2))
         st.download_button("Download Batch ZIP", data=batch_buf.getvalue(), file_name=f"batch_{qp['type']}_{int(time.time())}.zip", mime="application/zip")
 ``
