@@ -1,77 +1,77 @@
 import streamlit as st
+from PIL import Image, ImageDraw, ImageFont
 import random
+import io
 
-st.title("مولد أسئلة ذكاء مكاني (بدون مكتبات إضافية)")
-
-def get_circle_grid(pos_list, size=2):
-    grid = [["⬜" for _ in range(size)] for _ in range(size)]
-    for x, y in pos_list:
-        grid[y][x] = "⚪"
-    return "\n".join("".join(row) for row in grid)
-
-def get_triangle_grid(pos_type, size=2):
-    # Just flip positions for demonstration; can make logic more complex as needed
-    if pos_type == "original":
-        grid = [
-            ["🔺", "⚪"],
-            ["⚪", "🔺"]
-        ]
-    elif pos_type == "mirror":
-        grid = [
-            ["⚪", "🔺"],
-            ["🔺", "⚪"]
-        ]
-    return "\n".join("".join(row) for row in grid)
-
-def question_circle():
-    st.write("أي صورة تظهر بعد فتح الورقة كما هو موضح؟")
-    folded = [(1,0)] # Top right
-    st.write("الصورة المطوية:")
-    st.code(get_circle_grid(folded))
+def draw_folded_question(shape_type="circle"):
+    img = Image.new("RGB", (200, 100), "white")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0,0,100,100], outline="black", width=3)
+    draw.rectangle([100,0,200,100], outline="black", width=3)
     
-    options = [
-        [(1,0), (1,1)],   # two right
-        [(0,0), (1,0)],   # top row
-        [(1,0), (0,1)],   # diagonal (correct)
-        [(0,1), (1,1)],   # two bottom
-    ]
-    correct = 2
-    cols = st.columns(4)
-    btns = []
-    for i, opt in enumerate(options):
-        with cols[i]:
-            st.code(get_circle_grid(opt))
-            btns.append(st.button(f"اختر {chr(65+i)}", key=f"btn-circ-{i}"))
-    return btns, correct
+    if shape_type == "circle":
+        draw.ellipse([135, 35, 165, 65], outline="black", width=3)  # circle in top right
+    elif shape_type == "triangle":
+        draw.polygon([130,60,170,60,150,30], outline="black", width=3)  # triangle in top right
 
-def question_triangle():
-    st.write("أي صورة تظهر بعد فتح الورقة كما هو موضح؟")
-    st.write("الصورة المطوية:")
-    st.code(get_triangle_grid("original"))
-    options = [
-        "original",
-        "mirror",   # correct
-        "original",
-        "original"
-    ]
-    correct = 1
-    cols = st.columns(4)
-    btns = []
-    for i, opt in enumerate(options):
-        with cols[i]:
-            st.code(get_triangle_grid(opt))
-            btns.append(st.button(f"اختر {chr(65+i)}", key=f"btn-tri-{i}"))
-    return btns, correct
+    # Draw arrow
+    draw.arc([90, 20, 170, 80], start=0, end=180, fill="black", width=2)
+    draw.polygon([170,50,160,45,160,55], fill="black")
 
-qtype = random.choice(["circle", "triangle"])
-if qtype == "circle":
-    btns, correct = question_circle()
-else:
-    btns, correct = question_triangle()
+    return img
 
-for idx, pressed in enumerate(btns):
-    if pressed:
-        if idx == correct:
-            st.success("إجابة صحيحة!")
-        else:
-            st.error("إجابة خاطئة. حاول مرة أخرى!")
+def draw_answer_option(shape_type="circle", config=0):
+    img = Image.new("RGB", (100, 100), "white")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0,0,100,100], outline="black", width=3)
+    if shape_type == "circle":
+        # Four configurations
+        positions = [
+            [(70, 30), (30,70)],        # Correct (diagonal)
+            [(70, 30), (70,70)],        # right side
+            [(30,70), (70,70)],         # bottom row
+            [(30, 30), (70, 30)]        # top row
+        ]
+        for pos in positions[config]:
+            draw.ellipse([pos[0]-15,pos[1]-15,pos[0]+15,pos[1]+15], outline="black", width=3)
+    elif shape_type == "triangle":
+        positions = [
+            [(30,70,70,70,50,30),(80,50,60,80,100,80)], # original & mirrored
+            [(70,70,30,70,50,100),(20,50,60,20,100,20)],
+            [(30,30,70,30,50,70),(60,100,90,60,100,30)],
+            [(20,60,60,20,80,80),(90,10,100,50,80,100)],
+        ]
+        pts = positions[config]
+        draw.polygon(pts[0], outline="black", width=3)
+        draw.polygon(pts[1], outline="black", width=3)
+        # Also add some circles for style
+        draw.ellipse([40, 50, 60, 70], outline="black", width=2)
+        draw.ellipse([70, 60, 90, 80], outline="black", width=2)
+    return img
+
+st.title("أسئلة ذكاء مكاني بنمط الصور الأصلية")
+
+question_type = st.selectbox("اختر نوع السؤال", ["دائرة", "مثلث"])
+shape_type = "circle" if question_type == "دائرة" else "triangle"
+st.write("الصورة بعد الطي (قبل الفتح):")
+st.image(draw_folded_question(shape_type))
+
+st.write("اختر الإجابة الصحيحة من الخيارات التالية:")
+
+answer_configs = range(4)
+cols = st.columns(4)
+selected = None
+for idx in answer_configs:
+    image_buf = draw_answer_option(shape_type, idx)
+    with cols[idx]:
+        st.image(image_buf)
+        if st.button(f"اختر {chr(65+idx)}"):
+            selected = idx
+
+correct_idx = 0 if shape_type == "circle" else 0  # Adjust logic to match your keys
+if selected is not None:
+    if selected == correct_idx:
+        st.success("إجابة صحيحة!")
+    else:
+        st.error("خطأ! جرب مرة أخرى.")
+
