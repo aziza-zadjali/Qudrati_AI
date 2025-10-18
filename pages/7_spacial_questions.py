@@ -77,6 +77,7 @@ def _rotate_points(points, angle_deg, origin):
         qy = oy + math.sin(angle) * (x - ox) + math.cos(angle) * (y - oy)
         out.append((qx, qy))
     return out
+
 def _draw_polygon(draw, pts, fill, outline, width):
     draw.polygon(pts, fill=fill)
     pts_closed = list(pts) + [pts[0]]
@@ -321,7 +322,8 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         "grid_imgs": grid_imgs,
         "grid_size": (3, 3),
         "choices_imgs": choices_imgs,
-        "correct_index": choices.index(correct_img),
+        # FIXED: use choices_imgs (not choices)
+        "correct_index": choices_imgs.index(correct_img),
         "shape": shape,
         "rule_desc": rule_desc,
         "prompt": prompt_text,
@@ -469,6 +471,7 @@ def build_llm_prompt(question_type: str, rule_desc: str, prompt_text: str,
 # ----------------------------
 # Streamlit UI
 # ----------------------------
+
 st.set_page_config(page_title="Spatial IQ Generator", layout="wide")
 st.title("Spatial IQ Question Generator")
 
