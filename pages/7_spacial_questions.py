@@ -2,6 +2,8 @@
 # File: pages/7_spacial_questions.py
 # Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror)
 # Notes:
+#   - Button relocated to sidebar near settings for better UX.
+#   - Optional: Auto-generate when settings change.
 #   - ASCII-only strings to avoid parsing issues in some environments.
 #   - Fixes Pillow deprecation (uses textbbox instead of textsize).
 #   - Ensures placeholder tiles match neighbor tile sizes.
@@ -214,6 +216,7 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             if r == 2 and c == 2:
                 grid_imgs.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32)))
                 continue
+
             img = Image.new("RGB", img_size, (255, 255, 255))
             d = ImageDraw.Draw(img)
 
@@ -483,7 +486,7 @@ with st.sidebar:
         index=0
     )
     difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
-    seed_input = st.text_input("Seed (optional for reproducibility)", value="")
+    seed_input = st.text_input("Seed (optional for reproducibility)", value="", help="Leave empty for a fresh random seed each time.")
 
     st.markdown("---")
     st.subheader("Output Options")
@@ -498,6 +501,12 @@ with st.sidebar:
     ref_files = st.file_uploader("Upload sample question images (to display as reference)",
                                  type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
+    st.markdown("---")
+    st.subheader("Generate")
+    auto_generate = st.checkbox("Auto-generate when settings change", value=False)
+    trigger_sidebar = st.button("Generate New Question", type="primary", use_container_width=True)
+    st.caption("Tip: Change settings above, then click Generate. Or enable auto-generate.")
+
 colQ, colA = st.columns([2.1, 1.4])
 
 # RNG init
@@ -509,8 +518,23 @@ if seed_input.strip():
         seed = abs(hash(seed_input)) % (2**31)
 rng = make_rng(seed)
 
-# Generate on button or first load
-trigger = st.button("Generate New Question", type="primary") or ("qpack" not in st.session_state)
+# Detect settings changes for optional auto-generate
+current_settings = {
+    "q_type": q_type,
+    "difficulty": difficulty,
+    "seed_input": seed_input,
+    "include_llm": include_llm,
+    "ollama_host": ollama_host,
+    "ollama_model": ollama_model,
+    "temperature": temperature,
+}
+prev_settings = st.session_state.get("prev_settings")
+settings_changed = (prev_settings is not None) and (prev_settings != current_settings)
+st.session_state.prev_settings = current_settings  # update for next run
+
+# Decide trigger: first load OR sidebar button OR auto-generate on change
+trigger = ("qpack" not in st.session_state) or trigger_sidebar or (auto_generate and settings_changed)
+
 if trigger:
     if q_type.startswith("Matrix"):
         pack = generate_matrix_reasoning(rng, difficulty=difficulty)
@@ -604,12 +628,12 @@ if qp:
     with colQ:
         if show_guides:
             st.subheader("Question")
-        st.image(qp["problem_img"], use_container_width=True)  # updated
+        st.image(qp["problem_img"], use_container_width=True)
         st.write(qp["prompt"])
 
         if ref_files:
             with st.expander("Reference samples (uploaded)"):
-                st.image(ref_files, use_container_width=True)  # updated
+                st.image(ref_files, use_container_width=True)
 
     with colA:
         if show_guides:
@@ -618,7 +642,7 @@ if qp:
         cols2 = st.columns(2)
         for i, img in enumerate(qp["choices_imgs"]):
             with cols2[i % 2]:
-                st.image(img, caption=f"Option {qp['labels'][i]}", use_container_width=True)  # updated
+                st.image(img, caption=f"Option {qp['labels'][i]}", use_container_width=True)
 
         if st.button("Check answer"):
             if chosen == qp["correct_label"]:
