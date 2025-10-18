@@ -754,8 +754,7 @@ if gen:
 
             with st.container(border=True):
                 st.markdown(f"#### سؤال {idx}: {q.title}")
-                img_bytes = bytes_from_img(q.image)
-        st.image(img_bytes, use_column_width=True, caption="المرجع")
+                st.image(bytes_from_img(q.image), use_column_width=True, caption="المرجع")
                 cols = st.columns(4, gap="small")
                 opts = (q.options + [q.options[-1]])[:4] if q.options else []
                 for i, (c, col) in enumerate(zip(opts, cols)):
