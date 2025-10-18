@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
+Streamlit page 7: Arabic visual IQ question generator
 - Paper folding & hole punching
 - 2D rotation (Cross-board & Diagonal/X-board) + “رموز متغيّرة”
 - 3D isometric cube rotation
 - Shape assembly (which set forms the target?)
 - Difficulty tiers: سهل / متوسط / صعب
 - Thick, crisp strokes (STYLE + render scale)
-- Stem panel shows (Reference  →  Arrow banner in Arabic  →  ?)
-
+- Stem panel shows (Reference → Arrow banner in Arabic → ? → instructions)
 File path: pages/7_spacial_questions.py
 """
 
@@ -24,14 +23,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageOps, ImageFont
 import streamlit as st
 
-# ------------------------------ Paths ------------------------------
+# ---------------------------- Paths ----------------------------
 ROOT = Path(__file__).parents[1]
 LOGO_PATH = ROOT / "MOL_logo.png"
 
-# ------------------------------ Config ------------------------------
+# ---------------------------- Config ----------------------------
 AR_LETTERS = ["أ", "ب", "ج", "د"]
 RNG = random.Random()
-
 STYLE = {
     "grid": 6,
     "square": 6,
@@ -43,12 +41,11 @@ STYLE = {
 }
 CANVAS_SCALE = 1.7  # render bigger -> downscale -> crisp lines
 
-# ------------------ Optional LLM via Ollama -----------------------
+# ------------------- Optional LLM via Ollama --------------------
 try:
     import requests  # type: ignore
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
-
 
 def ollama_chat_or_fallback(system: str, user: str, model: str, enabled: bool = True, max_tokens: int = 256) -> str:
     if not enabled or requests is None:
@@ -71,8 +68,7 @@ def ollama_chat_or_fallback(system: str, user: str, model: str, enabled: bool = 
     except Exception:
         pass
     return user
-
-# ---------------------- Arabic shaping helpers --------------------
+# ---------------- Arabic shaping helpers -----------------------
 def get_ar_font(px: int) -> Optional[ImageFont.FreeTypeFont]:
     """Load a decent Arabic-capable font if available; fallback to DejaVuSans."""
     for name in ["NotoNaskhArabic-Regular.ttf", "NotoKufiArabic-Regular.ttf", "Amiri-Regular.ttf", "DejaVuSans.ttf"]:
@@ -90,13 +86,12 @@ def shape_ar(text: str) -> str:
     try:
         import arabic_reshaper  # type: ignore
         from bidi.algorithm import get_display  # type: ignore
-
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)  # make it RTL visually
     except Exception:
         return text  # graceful fallback
 
-# ---------------------- Basic drawing helpers ---------------------
+# -------------------- Basic drawing helpers --------------------
 def new_canvas(w: int, h: int, bg=(255, 255, 255)) -> Image.Image:
     W = int(w * CANVAS_SCALE)
     H = int(h * CANVAS_SCALE)
@@ -211,12 +206,22 @@ def hstack(*imgs: Image.Image, pad: int = 16, bg=(255, 255, 255)) -> Image.Image
         x += im.width + int(pad * CANVAS_SCALE)
     return out
 
-# -------- Banner arrow like sample; Arabic is shaped correctly ----
+def vstack(*imgs: Image.Image, pad: int = 12, bg=(255, 255, 255)) -> Image.Image:
+    W = max(im.width for im in imgs)
+    H = sum(im.height for im in imgs) + int(pad * CANVAS_SCALE) * (len(imgs) - 1)
+    out = Image.new("RGB", (W, H), bg)
+    y = 0
+    for im in imgs:
+        x = (W - im.width) // 2
+        out.paste(im, (x, y))
+        y += im.height + int(pad * CANVAS_SCALE)
+    return out
+
+# ---------- Banner arrow and hint box ----------
 def draw_banner_arrow(text: str, direction: str = "right") -> Image.Image:
     W, H = int(360 * CANVAS_SCALE), int(120 * CANVAS_SCALE)
     img = Image.new("RGBA", (W, H), (255, 255, 255, 0))
     d = ImageDraw.Draw(img)
-
     body_h = int(60 * CANVAS_SCALE)
     y0 = (H - body_h) // 2
     if direction == "left":
@@ -231,7 +236,6 @@ def draw_banner_arrow(text: str, direction: str = "right") -> Image.Image:
                (W - int(75 * CANVAS_SCALE), y0 - int(6 * CANVAS_SCALE)),
                (W - int(75 * CANVAS_SCALE), y0 + body_h + int(6 * CANVAS_SCALE))]
         d.polygon(tri, fill=(255, 255, 255), outline=(0, 0, 0))
-
     label = shape_ar(text)
     f = get_ar_font(int(28 * CANVAS_SCALE))
     d.text((W // 2, H // 2), label, fill=(0, 0, 0), anchor="mm", font=f)
@@ -245,7 +249,44 @@ def faint_hint_box(side: int = 220, text: str = "؟") -> Image.Image:
     d.text((img.width // 2, img.height // 2), text, fill=(170, 170, 170), anchor="mm", font=f)
     return img
 
-# ---------------------- Utilities ---------------------------------
+# ---------- Instruction box (NEW: clear guidance) ----------
+def instruction_box(lines: List[str], width: Optional[int] = None) -> Image.Image:
+    """
+    Renders a right-aligned Arabic instruction box with 1-3 short lines.
+    If width is None, uses a default width ~ the banner width.
+    """
+    W = width if width else int(900 * CANVAS_SCALE)
+    pad = int(16 * CANVAS_SCALE)
+    line_h = int(30 * CANVAS_SCALE)
+    H = pad * 2 + line_h * max(2, len(lines))
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    # frame
+    d.rectangle([pad // 2, pad // 2, W - pad // 2, H - pad // 2], outline=(0, 0, 0), width=max(2, STYLE["square"] - 2))
+    # title chip
+    title = shape_ar("التعليمات")
+    f_title = get_ar_font(int(24 * CANVAS_SCALE))
+    d.text((W - pad, pad + int(12 * CANVAS_SCALE)), title, fill=(0, 0, 0), anchor="ra", font=f_title)
+    # lines
+    f = get_ar_font(int(22 * CANVAS_SCALE))
+    y = pad + int(48 * CANVAS_SCALE)
+    bullet = shape_ar("•")
+    for raw in lines:
+        txt = shape_ar(raw)
+        d.text((W - pad, y), f"{bullet}  {txt}", fill=(0, 0, 0), anchor="ra", font=f)
+        y += line_h
+    return img
+
+def compose_stem(reference: Image.Image, banner_text: str, instructions: List[str]) -> Image.Image:
+    """Reference (left) + Arabic banner arrow → + faint '?' box + instructions underneath."""
+    ref = _finalize_for_display(reference)
+    arrow = draw_banner_arrow(banner_text, direction="right")
+    qbox = faint_hint_box(text="؟")
+    top = _finalize_for_display(hstack(ref, arrow, qbox))
+    instr = instruction_box(instructions, width=top.width)
+    return _finalize_for_display(vstack(top, instr))
+
+# ----------------------- Utilities -----------------------
 def bytes_from_img(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -254,12 +295,12 @@ def bytes_from_img(img: Image.Image) -> bytes:
 @dataclass
 class Question:
     title: str
-    stem_image: Image.Image   # Reference (left) + banner arrow + placeholder ?
+    stem_image: Image.Image  # Reference panel (left) + banner + ? + instructions
     options: List[Image.Image]
     correct_index: int
     explanation: str
 
-# ---------------------- Glyph pools (“رموز متغيّرة”) --------------
+# -------------------- Glyph pools (“رموز متغيّرة”) --------------------
 def glyph_pool(variable_mode: bool, difficulty: str) -> List[str]:
     base = ["plus", "diamond", "circle", "triangle"]
     extra = ["star", "half_up", "half_right", "square_small", "L"]
@@ -296,7 +337,7 @@ def draw_glyph(draw: ImageDraw.ImageDraw, glyph: str, center: Tuple[int, int], s
     elif glyph == "L":
         draw_L(draw, center, size)
 
-# ---------------------- 2D boards --------------------------------
+# --------------------------- 2D boards ---------------------------
 def board_cross(canvas_size=300, seed=0, variable_mode: bool = True, difficulty: str = "سهل") -> Image.Image:
     RNG.seed(seed)
     img = new_canvas(canvas_size, canvas_size)
@@ -337,65 +378,63 @@ def rotate_image(img: Image.Image, angle_deg: int, allow_mirror=False) -> Image.
         out = ImageOps.mirror(out)
     return out
 
-def compose_stem(reference: Image.Image, banner_text: str) -> Image.Image:
-    """Reference (big, left) + Arabic banner arrow → + faint '?' box."""
-    ref = _finalize_for_display(reference)
-    arrow = draw_banner_arrow(banner_text, direction="right")
-    qbox = faint_hint_box(text="؟")
-    return _finalize_for_display(hstack(ref, arrow, qbox))
-
-# ---------------------- Question builders -------------------------
+# ----------------------- Question builders -----------------------
 def quadrant_rotation_question(seed: int = 0, difficulty: str = "سهل", variable_mode: bool = True, use_llm: bool = True) -> Question:
     base = board_cross(canvas_size=300, seed=seed, variable_mode=variable_mode, difficulty=difficulty)
     angle = RNG.choice([90, 180, 270])
-    stem = compose_stem(base, banner_text=f"عند تدويرها {angle}° يصبح")
-
+    # Explicit instructions for clarity
+    instructions = [
+        f"دوِّر اللوحة باتجاه عقارب الساعة بمقدار {angle}° كما يشير السهم.",
+        "اختر البديل (أ/ب/ج/د) الذي يطابق النتيجة دون أي انعكاس مرآتي."
+    ]
+    stem = compose_stem(base, banner_text=f"بعد تدوير اللوحة بمقدار {angle}° يصبح", instructions=instructions)
     correct = rotate_image(base, -angle, allow_mirror=False)
     if difficulty == "سهل":
         distract = [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)] + [ImageOps.mirror(base)]
     elif difficulty == "متوسط":
         distract = [ImageOps.flip(rotate_image(base, -angle))] + [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)]
     else:
-        distract = [ImageOps.mirror(rotate_image(base, -angle)), rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])), ImageOps.flip(base)]
-
+        distract = [ImageOps.mirror(rotate_image(base, -angle)),
+                    rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
+                    ImageOps.flip(base)]
     options = [correct] + distract
     RNG.shuffle(options)
     correct_index = options.index(correct)
-
     stem = _finalize_for_display(stem)
     options = [_finalize_for_display(o) for o in options]
-
     sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat_or_fallback(sys, "انظر إلى اللوحة على اليسار والسهم. أيُّ بديل يطابق نتيجة التدوير؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat_or_fallback(sys, "الصحيح يحافظ على ترتيب الرموز بعد تدويرها حول المركز دون انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    title = ollama_chat_or_fallback(sys, f"تدوير رباعي: دوِّر اللوحة {angle}° واختر المطابقة دون انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    expl  = ollama_chat_or_fallback(sys, "الصحيح يحافظ على ترتيب الرموز بعد تدويرها حول المركز، بلا انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
     return Question(title=title, stem_image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True, difficulty: str = "سهل", use_llm: bool = True) -> Question:
     base = board_diag(canvas_size=300, seed=seed, variable_mode=variable_mode, difficulty=difficulty)
     angle = RNG.choice([90, 180, 270])
-    stem = compose_stem(base, banner_text=f"عند تدويرها {angle}° يصبح")
-
+    instructions = [
+        f"دوِّر اللوحة باتجاه عقارب الساعة بمقدار {angle}° كما يشير السهم.",
+        "قارن مواضع الرموز على القطرين بعد الدوران؛ لا انعكاس."
+    ]
+    stem = compose_stem(base, banner_text=f"بعد تدوير اللوحة بمقدار {angle}° يصبح", instructions=instructions)
     correct = rotate_image(base, -angle)
     if difficulty == "سهل":
         distract = [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)] + [ImageOps.mirror(base)]
     elif difficulty == "متوسط":
         distract = [ImageOps.flip(rotate_image(base, -angle))] + [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)]
     else:
-        distract = [ImageOps.mirror(rotate_image(base, -angle)), rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])), ImageOps.flip(base)]
-
+        distract = [ImageOps.mirror(rotate_image(base, -angle)),
+                    rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
+                    ImageOps.flip(base)]
     options = [correct] + distract
     RNG.shuffle(options)
     correct_index = options.index(correct)
-
     stem = _finalize_for_display(stem)
     options = [_finalize_for_display(o) for o in options]
-
     sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat_or_fallback(sys, "أيُّ بديل يطابق نتيجة التدوير الموضّحة؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat_or_fallback(sys, "راجع مواضع الرموز على القطرين بعد الدوران؛ لا يوجد انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    title = ollama_chat_or_fallback(sys, f"تدوير قطري: دوِّر اللوحة {angle}° واختر الصورة المطابقة.", model=st.session_state.get("llm_llm", "qwen2.5:3b"), enabled=use_llm)
+    expl  = ollama_chat_or_fallback(sys, "راجع مواضع الرموز على القطرين بعد الدوران؛ لا يوجد انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
     return Question(title=title, stem_image=stem, options=options, correct_index=correct_index, explanation=expl)
 
-# ----------- 3D isometric cube rotation ---------------------------
+# -------------------- 3D isometric cube rotation -----------------
 def orientation_matrices() -> List[np.ndarray]:
     mats = []
     axes = [
@@ -412,8 +451,7 @@ def orientation_matrices() -> List[np.ndarray]:
     for m in mats:
         key = tuple(np.round(m, 3).flatten().tolist())
         if key not in seen:
-            seen.add(key)
-            uniq.append(m)
+            seen.add(key); uniq.append(m)
     return uniq
 
 ORIENTS = orientation_matrices()
@@ -469,14 +507,15 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
     RNG.seed(seed)
     n = {"سهل": 4, "متوسط": 5, "صعب": 6}[difficulty]
     shape = random_polycube(n=n, seed=seed)
-
     ref = draw_iso_cubes(shape, img_size=(300, 260))
-    stem = compose_stem(ref, banner_text="عند تدويره يصبح")
-
+    instructions = [
+        "اتبع اتجاه السهم لتدوير المجسّم في الفضاء.",
+        "اختر البديل الذي يطابق الشكل تمامًا (لا انعكاس مرآتي، نفس ترتيب المكعّبات)."
+    ]
+    stem = compose_stem(ref, banner_text="بعد تدوير المجسّم يصبح", instructions=instructions)
     R_true = RNG.choice(ORIENTS)
     correct_coords = apply_rot(shape, R_true)
     correct_img = draw_iso_cubes(correct_coords, img_size=(260, 240))
-
     used = {tuple(map(int, np.rint(R_true).flatten()))}
     options: List[Image.Image] = [correct_img]
     while len(options) < 4:
@@ -486,33 +525,27 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
             continue
         used.add(key)
         options.append(draw_iso_cubes(apply_rot(shape, R_alt), img_size=(260, 240)))
-
     RNG.shuffle(options)
     correct_index = options.index(correct_img)
-
     stem = _finalize_for_display(stem)
     options = [_finalize_for_display(o) for o in options]
-
     sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat_or_fallback(sys, "انظر إلى المجسّم على اليسار والسهم. أيُّ بديل يطابقه بعد التدوير؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat_or_fallback(sys, "الصحيح يمثّل نفس البوليكويب من زاوية دوران مختلفة فقط.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    title = ollama_chat_or_fallback(sys, "تدوير مكعّبات ثلاثي: اختر المطابقة بعد الدوران كما يشير السهم.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    expl  = ollama_chat_or_fallback(sys, "الصحيح يمثّل نفس البوليكويب بزاوية دوران أخرى فقط (دون انعكاس).", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
     return Question(title=title, stem_image=stem, options=options, correct_index=correct_index, explanation=expl)
 
-# ----------- Paper folding ----------------------------------------
+# ----------------------------- Paper folding -----------------------------
 def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
     RNG.seed(seed)
     base_size = 280
-
     folded = new_canvas(base_size, base_size)
     d = ImageDraw.Draw(folded)
     draw_square(d, (10, 10), folded.width - 20)
-
     fold_dir = RNG.choice(["h", "v"])
     if fold_dir == "h":
         dashed_line(d, (10, folded.height // 2), (folded.width - 10, folded.height // 2))
     else:
         dashed_line(d, (folded.width // 2, 10), (folded.width // 2, folded.height - 10))
-
     ranges = {"سهل": (1, 2), "متوسط": (2, 3), "صعب": (3, 4)}
     lo, hi = ranges.get(difficulty, (1, 2))
     holes = RNG.randint(lo, hi)
@@ -527,8 +560,12 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool
         pts.append((x, y))
     for (x, y) in pts:
         draw_circle(d, (x, y), int(12 * CANVAS_SCALE))
-
-    stem = compose_stem(folded, banner_text="افتح وفق خط الطيّ")
+    instructions = [
+        "افتح الورقة مرة واحدة على طول خط الطيّ المرسوم.",
+        "ستتكرر الثقوب انعكاسًا حول خط الطيّ.",
+        "اختر المخطط الذي يطابق مواضع الثقوب بعد الفتح."
+    ]
+    stem = compose_stem(folded, banner_text="افتح وفق خط الطيّ", instructions=instructions)
 
     def mirror(p: Tuple[int,int]) -> Tuple[int,int]:
         x, y = p
@@ -557,28 +594,32 @@ def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool
 
     options = [correct_img, wrong1, wrong2, wrong3]; RNG.shuffle(options)
     correct_index = options.index(correct_img)
-
     stem = _finalize_for_display(stem); options = [_finalize_for_display(o) for o in options]
-
     sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat_or_fallback(sys, "بعد فتح الورقة كما في السهم، أيُّ بديل يطابق نمط الثقوب؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat_or_fallback(sys, "الصحيح يُظهر انعكاسًا تامًا حول خط الطيّ مع تكرار الثقوب.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    title = ollama_chat_or_fallback(sys, "فتح ورقة مثقوبة: حدِّد المخطط الصحيح بعد الفتح حول خط الطيّ.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    expl  = ollama_chat_or_fallback(sys, "الصحيح يُظهر انعكاسًا تامًا حول خط الطيّ مع تكرار الثقوب.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
     return Question(title=title, stem_image=stem, options=options, correct_index=correct_index, explanation=expl)
 
-# ----------- Shape assembly ---------------------------------------
+# ------------------------------ Shape assembly ------------------------------
 def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
     RNG.seed(seed)
     target = RNG.choice(["square", "pentagon"])
-
     if target == "square":
         ref = new_canvas(280, 280); draw_square(ImageDraw.Draw(ref), (10, 10), ref.width - 20)
+        instructions = [
+            "اختر المجموعة التي يمكن ترتيبها (مع تدوير/انعكاس القطع إن لزم) لتكوين المربع.",
+            "يجب أن تكتمل الحدود دون فجوات أو تداخل."
+        ]
     else:
         ref = new_canvas(280, 280); d = ImageDraw.Draw(ref)
         cx, cy, r = ref.width // 2, ref.height // 2, int(110 * CANVAS_SCALE)
         pts = [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(-math.pi/2, 1.5*math.pi, 6)[:-1]]
         poly_with_width(d, pts, fill=None, outline=(0,0,0), width=STYLE["square"])
-
-    stem = compose_stem(ref, banner_text="كوّن الشكل المطلوب")
+        instructions = [
+            "اختر المجموعة التي يمكن ترتيبها (مع تدوير/انعكاس القطع) لتكوين خماسي الأضلاع.",
+            "تأكّد من تطابق الحواف والزوايا دون فراغات."
+        ]
+    stem = compose_stem(ref, banner_text="كوّن الشكل المطلوب", instructions=instructions)
 
     def tri_img(angle=0, flip=False) -> Image.Image:
         S = int(120 * CANVAS_SCALE); pad = int(8 * CANVAS_SCALE)
@@ -601,7 +642,9 @@ def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
             [int(10*CANVAS_SCALE), int(10*CANVAS_SCALE), rect.width-int(10*CANVAS_SCALE), rect.height-int(10*CANVAS_SCALE)],
             outline=(0,0,0), width=STYLE["square"])
         rhombus = new_canvas(120,120); draw_diamond(ImageDraw.Draw(rhombus), (rhombus.width//2, rhombus.height//2), int(80*CANVAS_SCALE))
-        optB = panel([rect, rhombus]); optC = panel([tri_img(angle=90), rhombus.rotate(45, expand=True, fillcolor=(255,255,255))]); optD = panel([tri_img(flip=True), rect])
+        optB = panel([rect, rhombus])
+        optC = panel([tri_img(angle=90), rhombus.rotate(45, expand=True, fillcolor=(255,255,255))])
+        optD = panel([tri_img(flip=True), rect])
         options = [optA, optB, optC, optD]; correct_index = 0
     else:
         quad = new_canvas(160,140); ImageDraw.Draw(quad).polygon([(int(20*CANVAS_SCALE),int(120*CANVAS_SCALE)),(int(80*CANVAS_SCALE),int(20*CANVAS_SCALE)),(int(140*CANVAS_SCALE),int(60*CANVAS_SCALE)),(int(100*CANVAS_SCALE),int(120*CANVAS_SCALE))], outline=(0,0,0), fill=None)
@@ -611,17 +654,16 @@ def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
         options = [panel([quad, quad2]), panel([quad, circ]), panel([quad2, tri]), panel([circ, tri])]; correct_index = 0
 
     stem = _finalize_for_display(stem); options = [_finalize_for_display(o) for o in options]
-
     sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat_or_fallback(sys, "أي مجموعة من القطع يمكن أن تُكوِّن الشكل المطلوب؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True))
-    expl = ollama_chat_or_fallback(sys, "قارن الحواف والزوايا والمساحات؛ المجموعة الصحيحة تُكوِّن الحدود دون فجوات.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True))
+    title = ollama_chat_or_fallback(sys, "تركيب شكل: اختر المجموعة القابلة للترتيب لتكوين الشكل الهدف.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True))
+    expl  = ollama_chat_or_fallback(sys, "قارن الحواف والزوايا والمساحات؛ المجموعة الصحيحة تُكوِّن الحدود دون فجوات.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True))
     return Question(title=title, stem_image=stem, options=options, correct_index=correct_index, explanation=expl)
 
-# ---------------------- Streamlit Page UI -------------------------
+# --------------------------- Streamlit Page UI ---------------------------
 if LOGO_PATH.exists():
     st.sidebar.image(str(LOGO_PATH))
-st.sidebar.markdown("### الإعدادات")
 
+st.sidebar.markdown("### الإعدادات")
 left, right = st.sidebar.columns([1, 1])
 with left:
     n_q = st.number_input("عدد الأسئلة", 1, 24, 8)
@@ -646,7 +688,7 @@ col1, col2 = st.columns([1, 1])
 with col1:
     gen = st.button("🚀 إنشاء الأسئلة", use_container_width=True)
 with col2:
-    st.caption("اللوحة العلوية تعرض **المرجع** وسهمًا عربيًا كبيرًا «عند تدويره يصبح». ثم اختر من البدائل (أ/ب/ج/د).")
+    st.caption("اللوحة العلوية تعرض **المرجع** وسهمًا عربيًا واضحًا وتعليمات مفصّلة. ثم اختر من البدائل (أ/ب/ج/د).")
 
 st.title("مولّد أسئلة ذكاء مرئية (Spatial IQ)")
 
@@ -681,6 +723,7 @@ if gen:
 
             st.markdown(f"#### سؤال {idx}: {q.title}")
             st.image(q.stem_image, use_container_width=True)
+
             cols = st.columns(4, gap="small")
             for i, (c, col) in enumerate(zip(q.options, cols)):
                 col.image(c, use_container_width=True)
@@ -698,6 +741,7 @@ if gen:
             with st.expander("إظهار الحل/الشرح"):
                 st.markdown(f"**الإجابة الصحيحة:** {AR_LETTERS[q.correct_index]}")
                 st.write(q.explanation if st.session_state.get("use_llm", True) else "الصحيح الوحيد يوافق قاعدة السؤال (انعكاس/تدوير/تجميع).")
+
             st.divider()
 
         zf.writestr("answers.csv", answers_csv.getvalue().encode("utf-8"))
