@@ -279,9 +279,6 @@ def build_by_type(kind: str, seed: int) -> Question:
 # ========== Ready for PART 4: Main Streamlit UI and export logic ==========
 # ========== PART 4: Main Streamlit UI and Export Logic ==========
 
-
-st.sidebar.markdown(_t("settings"))
-
 n_q = st.sidebar.number_input(_t("num_questions"), 1, 24, 8)
 seed_base = st.sidebar.number_input(_t("seed_label"), 0, 10_000_000, 12345)
 if st.sidebar.button(_t("random_seed")):
@@ -354,4 +351,5 @@ def _t(key: str) -> str:
 
 # ========== REMAINING: Drawing, question generation, and main Streamlit blocks will follow. ==========
 # ========== Please reply "continue" to receive the next segment including all glyph drawing, shape and cube logic, and full modern question builders. ==========
+
 
