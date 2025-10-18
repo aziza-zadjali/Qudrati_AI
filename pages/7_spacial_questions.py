@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# Write the enhanced Streamlit page to a ready-to-run .py file
+code = r'''# -*- coding: utf-8 -*-
 """
 Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
 - Paper folding & hole punching
@@ -676,7 +677,9 @@ if gen:
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for idx, kind in enumerate(order, 1):
-            qseed = seed_base ^ (RNG.randint(1, 1_000_000_007) + idx * 9973)
+            qseed = seed_base ^ (RNG.randint(1, 1,000,000,007) + idx * 9973)
+            # Fix for Python: commas in numeric literal removed
+            qseed = seed_base ^ (RNG.randint(1, 1000000007) + idx * 9973)
             q = build_by_type(kind, seed=qseed)
 
             st.markdown(f"#### سؤال {idx}: {q.title}")
@@ -693,7 +696,7 @@ if gen:
             zf.writestr(f"q{idx}_stem.png", bytes_from_img(q.stem_image))
             for i, c in enumerate(q.options, start=1):
                 zf.writestr(f"q{idx}_opt_{i}.png", bytes_from_img(c))
-            answers_csv.write(f"{idx},{kind},{AR_LETTERS[q.correct_index]},{qseed}\n")
+            answers_csv.write(f"{idx},{kind},{AR_LETTERS[q.correct_index]},{qseed}\\n")
 
             with st.expander("إظهار الحل/الشرح"):
                 st.markdown(f"**الإجابة الصحيحة:** {AR_LETTERS[q.correct_index]}")
@@ -711,3 +714,9 @@ if gen:
     )
 else:
     st.info("اضغط **إنشاء الأسئلة** لبدء التوليد.")
+'''
+# Save file
+with open('/mnt/data/7_spacial_questions.py', 'w', encoding='utf-8') as f:
+    f.write(code)
+
+'/mnt/data/7_spacial_questions.py'
