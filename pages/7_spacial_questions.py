@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 # File: pages/7_spacial_questions.py
-# Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror, Sample)
+# Title: Spatial IQ Question Generator (Matrix, Rotation, Mirror, Sample, Mimic)
 # Notes:
-#   - ASCII-only strings (no emojis or special symbols).
-#   - Pillow 10+ compatible (uses textbbox, no textsize).
-#   - Ensures placeholder tiles match neighbor tile sizes.
+#   - NEW: "Mimic Sample (Procedural)" mode extracts palette/stroke from a sample image,
+#           then generates NEW questions in that style.
 #   - Sidebar Generate button + optional auto-generate on settings change.
+#   - ASCII-only strings (no emojis).
+#   - Pillow 10+ compatible (uses textbbox; no textsize).
+#   - Consistent tile sizes; use_container_width everywhere.
 #   - Export ZIP with images + JSON metadata.
-#   - Streamlit: use_container_width only (no deprecated flags).
+#   - Optional LLM explanations via Ollama.
 
 import io
 import os
@@ -43,12 +45,14 @@ def _load_font(font_size: int):
         except Exception:
             return ImageFont.load_default()
 
+def _is_light(rgb):
+    r, g, b = rgb
+    # simple luminance heuristic
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return y > 186
+
 def text_image(text: str, size: Tuple[int, int] = (380, 380), font_size: int = 42,
                color=(30, 30, 30), bg=(255, 255, 255)) -> Image.Image:
-    """
-    Create an image with centered text. Compatible with Pillow 10+ (no textsize).
-    Uses textbbox; fallback to textlength approximation.
-    """
     img = Image.new("RGB", size, bg)
     d = ImageDraw.Draw(img)
     font = _load_font(font_size)
@@ -129,6 +133,74 @@ def compose_grid(images: List[Image.Image], grid_size: Tuple[int, int], pad: int
             canvas.paste(images[r * cols + c], (x, y))
     return canvas
 
+# ------------ Style extraction (from sample image) ------------
+
+def extract_style_from_image(img: Image.Image, n_colors: int = 6) -> Dict:
+    """
+    Extract a simple style profile from an image:
+      - background: most frequent color
+      - outline: darkest among palette
+      - fills: other dominant colors (excluding bg), sorted by saturation/luma mix
+      - stroke_width: heuristic based on image width
+    Uses PIL adaptive quantization (no external deps).
+    """
+    # Downscale for robustness
+    small = img.convert("RGB")
+    if max(small.size) > 512:
+        scale = 512 / max(small.size)
+        small = small.resize((int(small.width * scale), int(small.height * scale)), Image.BILINEAR)
+
+    # Quantize to n_colors
+    pal_img = small.quantize(colors=n_colors, method=Image.MEDIANCUT)
+    palette = pal_img.getpalette()[:n_colors * 3]
+    counts = pal_img.getcolors()  # list of (count, index)
+
+    # Map palette indices to RGB and sort by frequency desc
+    colors_freq = []
+    if counts:
+        for count, idx in counts:
+            rgb = tuple(palette[idx * 3: idx * 3 + 3])
+            colors_freq.append((count, rgb))
+        colors_freq.sort(key=lambda x: x[0], reverse=True)
+
+    # Pick background as most common color
+    bg = colors_freq[0][1] if colors_freq else (255, 255, 255)
+
+    # Determine outline as darkest color among palette
+    unique_rgbs = [rgb for _, rgb in colors_freq]
+    if not unique_rgbs:
+        unique_rgbs = [(30, 30, 30), (0, 0, 0), (200, 200, 200)]
+    darkest = min(unique_rgbs, key=lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2])
+
+    # Fills = remaining colors excluding bg; sort by perceived saturation-ish
+    def sat_like(c):
+        r, g, b = c
+        mx, mn = max(c), min(c)
+        return (mx - mn, -(0.2126*r + 0.7152*g + 0.0722*b))  # prioritize spread, then darker
+    fills = [c for c in unique_rgbs if c != bg]
+    fills.sort(key=sat_like, reverse=True)
+
+    # Ensure at least a few fills
+    if len(fills) < 3:
+        fills = fills + [(0, 88, 155), (200, 0, 0), (0, 140, 70)]
+        seen = set()
+        fills = [x for x in fills if not (x in seen or seen.add(x))]
+
+    # Stroke width heuristic
+    base_w = img.width
+    stroke_width = 5 if base_w < 800 else (6 if base_w < 1400 else 8)
+
+    # Ensure good text contrast
+    text_color = (20, 20, 20) if _is_light(bg) else (240, 240, 240)
+
+    return {
+        "bg": bg,
+        "outline": darkest,
+        "fills": fills,
+        "stroke_width": stroke_width,
+        "text_color": text_color
+    }
+
 
 # ----------------------------
 # Data model for export
@@ -155,11 +227,11 @@ class QuestionPackage:
 
 
 # ----------------------------
-# Puzzle generators
+# Puzzle generators (style-aware)
 # ----------------------------
 
-SHAPES = ["circle", "square", "triangle", "pentagon"]
-COLORS = [
+DEFAULT_SHAPES = ["circle", "square", "triangle", "pentagon"]
+DEFAULT_COLORS = [
     (30, 30, 30),
     (0, 88, 155),
     (200, 0, 0),
@@ -168,42 +240,67 @@ COLORS = [
     (120, 0, 160),
 ]
 
-def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shape_size=160, difficulty="Medium"):
-    if difficulty == "Easy":
-        rules_to_use = 1
-        rotation_step_choices = [0, 45, 90]
-    elif difficulty == "Hard":
-        rules_to_use = 3
-        rotation_step_choices = [30, 45, 60, 90]
+def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shape_size=160, difficulty="Medium",
+                              style: Optional[Dict] = None, forced_rules: Optional[Dict] = None):
+    """
+    Generate a 3x3 matrix; bottom-right is missing.
+    style: dict with keys bg, outline, fills(list), stroke_width.
+    forced_rules: optional dict like {"rotation": True, "count": True, "color": False, "size": False,
+                                      "rotation_step": 45, "size_step": 20, "base_count": 1}
+    """
+    fills = (style.get("fills") if style else None) or DEFAULT_COLORS
+    outline_color = (style.get("outline") if style else None) or (10, 10, 10)
+    bg_color = (style.get("bg") if style else None) or (255, 255, 255)
+    stroke_w = (style.get("stroke_width") if style else None) or 4
+
+    # Determine rules
+    if forced_rules:
+        use_rotation = bool(forced_rules.get("rotation", False))
+        use_count = bool(forced_rules.get("count", False))
+        use_color = bool(forced_rules.get("color", False))
+        use_size = bool(forced_rules.get("size", False))
+        # Parameters (fallbacks)
+        rotation_step = int(forced_rules.get("rotation_step", 45)) if use_rotation else 0
+        size_step = int(forced_rules.get("size_step", 20)) if use_size else 0
+        base_count = int(forced_rules.get("base_count", 1)) if use_count else 1
     else:
-        rules_to_use = 2
-        rotation_step_choices = [30, 45, 60, 90]
+        if difficulty == "Easy":
+            rules_to_use = 1
+            rotation_step_choices = [0, 45, 90]
+        elif difficulty == "Hard":
+            rules_to_use = 3
+            rotation_step_choices = [30, 45, 60, 90]
+        else:
+            rules_to_use = 2
+            rotation_step_choices = [30, 45, 60, 90]
+        use_rotation = use_count = use_color = use_size = False
+        for s in rng.sample(["rotation", "count", "color", "size"], rules_to_use):
+            if s == "rotation": use_rotation = True
+            elif s == "count": use_count = True
+            elif s == "color": use_color = True
+            elif s == "size": use_size = True
+        rotation_step = rng.choice(rotation_step_choices) if use_rotation else 0
+        base_count = rng.randint(1, 2) if use_count else 1
+        size_step = rng.choice([-20, 20]) if use_size else 0
 
-    use_rotation = use_count = use_color = use_size = False
-    for s in rng.sample(["rotation", "count", "color", "size"], rules_to_use):
-        if s == "rotation": use_rotation = True
-        elif s == "count":  use_count = True
-        elif s == "color":  use_color = True
-        elif s == "size":   use_size = True
-
-    rotation_step = rng.choice(rotation_step_choices) if use_rotation else 0
-    base_count = rng.randint(1, 2) if use_count else 1
     base_size = cell_shape_size
-    size_step = rng.choice([-20, 20]) if use_size else 0
-    base_color_idx = rng.randrange(len(COLORS)) if use_color else 0
+    base_color_idx = rng.randrange(len(fills)) if use_color else 0
     color_by_row = (rng.random() < 0.5) if use_color else True
-
-    shape = rng.choice(SHAPES)
+    shape = rng.choice(DEFAULT_SHAPES)
 
     grid_imgs = []
     rule_desc_parts = []
+    # Precompute text color for placeholder
+    txt_col = (style.get("text_color") if style else None) or (30, 30, 30)
+
     for r in range(3):
         for c in range(3):
             if r == 2 and c == 2:
-                grid_imgs.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32)))
+                grid_imgs.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32),
+                                            color=txt_col, bg=bg_color))
                 continue
 
-            img = Image.new("RGB", img_size, (255, 255, 255))
+            img = Image.new("RGB", img_size, bg_color)
             d = ImageDraw.Draw(img)
 
             rot = (c * rotation_step) % 360 if use_rotation else 0
@@ -211,7 +308,7 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             size_px = max(50, base_size + r * size_step) if use_size else base_size
             if use_color:
                 shift = r if color_by_row else c
-                color_idx = (base_color_idx + shift) % len(COLORS)
+                color_idx = (base_color_idx + shift) % len(fills)
             else:
                 color_idx = base_color_idx
 
@@ -225,12 +322,11 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             k = 0
             for rr in range(rows_cnt):
                 for cc in range(cols_cnt):
-                    if k >= count:
-                        break
+                    if k >= count: break
                     cx = margin + cc * cell_w + cell_w // 2
                     cy = margin + rr * cell_h + cell_h // 2
                     draw_shape(d, shape, (cx, cy), mini_size, rotation_deg=rot,
-                               fill=COLORS[color_idx], outline=(10, 10, 10), width=4)
+                               fill=fills[color_idx], outline=outline_color, width=stroke_w)
                     k += 1
             grid_imgs.append(img)
 
@@ -239,12 +335,12 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
     correct_size = max(50, base_size + 2 * size_step) if use_size else base_size
     if use_color:
         shift = 2 if color_by_row else 2
-        color_idx_correct = (base_color_idx + shift) % len(COLORS)
+        color_idx_correct = (base_color_idx + shift) % len(fills)
     else:
         color_idx_correct = base_color_idx
 
     def render_multi(count, rot, sz, color_idx):
-        img = Image.new("RGB", img_size, (255, 255, 255))
+        img = Image.new("RGB", img_size, bg_color)
         d = ImageDraw.Draw(img)
         cols_cnt = int(math.ceil(math.sqrt(count)))
         rows_cnt = int(math.ceil(count / cols_cnt))
@@ -256,12 +352,11 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         k2 = 0
         for rr in range(rows_cnt):
             for cc in range(cols_cnt):
-                if k2 >= count:
-                    break
+                if k2 >= count: break
                 cx = margin + cc * cell_w + cell_w // 2
                 cy = margin + rr * cell_h + cell_h // 2
                 draw_shape(d, shape, (cx, cy), mini_size2, rotation_deg=rot,
-                           fill=COLORS[color_idx], outline=(10, 10, 10), width=4)
+                           fill=fills[color_idx], outline=outline_color, width=stroke_w)
                 k2 += 1
         return img
 
@@ -277,7 +372,7 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         elif var == "size":
             sz = max(50, sz + rng.choice([-20, 20]))
         elif var == "color":
-            col = (col + rng.choice([1, -1])) % len(COLORS)
+            col = (col + rng.choice([1, -1])) % len(fills)
         return render_multi(cnt, rot, sz, col)
 
     distractor_kinds = []
@@ -295,7 +390,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
     if use_count:    rule_desc_parts.append("Number of shapes increases by 1 down the rows.")
     if use_color:    rule_desc_parts.append(f"Color alternates by {'row' if color_by_row else 'column'}.")
     if use_size:     rule_desc_parts.append(f"Shape size changes by {size_step:+d} px per row.")
-
     rule_desc = " ".join(rule_desc_parts) if rule_desc_parts else "Follow the visual pattern."
     prompt_text = "Which option completes the 3x3 matrix?"
 
@@ -318,39 +412,47 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             "size_step": size_step,
             "base_count": base_count,
             "color_by_row": color_by_row,
+            "style_used": bool(style)
         }
     }
 
-def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_size=200, difficulty="Medium"):
+def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_size=200, difficulty="Medium",
+                               style: Optional[Dict] = None):
+    fills = (style.get("fills") if style else None) or DEFAULT_COLORS
+    outline_color = (style.get("outline") if style else None) or (10, 10, 10)
+    bg_color = (style.get("bg") if style else None) or (255, 255, 255)
+    stroke_w = (style.get("stroke_width") if style else None) or 5
+
     steps = 3 if difficulty == "Easy" else (4 if difficulty == "Medium" else 5)
-    shape = rng.choice(SHAPES)
-    step_angle = rng.choice([30, 45, 60, 90])
-    start_angle = rng.choice([0, 15, 30, 45])
-    color = rng.choice(COLORS)
+    shape = random.choice(DEFAULT_SHAPES)
+    step_angle = random.choice([30, 45, 60, 90])
+    start_angle = random.choice([0, 15, 30, 45])
+    color = random.choice(fills)
 
     seq_imgs = []
     for i in range(steps):
-        img = Image.new("RGB", img_size, (255, 255, 255))
+        img = Image.new("RGB", img_size, bg_color)
         d = ImageDraw.Draw(img)
         draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
-                   rotation_deg=(start_angle + i * step_angle) % 360, fill=color, outline=(10, 10, 10), width=5)
+                   rotation_deg=(start_angle + i * step_angle) % 360,
+                   fill=color, outline=outline_color, width=stroke_w)
         seq_imgs.append(img)
 
     correct_rot = (start_angle + steps * step_angle) % 360
-    correct_img = Image.new("RGB", img_size, (255, 255, 255))
+    correct_img = Image.new("RGB", img_size, bg_color)
     d = ImageDraw.Draw(correct_img)
     draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
-               rotation_deg=correct_rot, fill=color, outline=(10, 10, 10), width=5)
+               rotation_deg=correct_rot, fill=color, outline=outline_color, width=stroke_w)
 
     choices = [correct_img]
     for delta_mult in [1, -1, 2]:
-        img = Image.new("RGB", img_size, (255, 255, 255))
+        img = Image.new("RGB", img_size, bg_color)
         d = ImageDraw.Draw(img)
         wrong_rot = (correct_rot + delta_mult * step_angle) % 360
         draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
-                   rotation_deg=wrong_rot, fill=color, outline=(10, 10, 10), width=5)
+                   rotation_deg=wrong_rot, fill=color, outline=outline_color, width=stroke_w)
         choices.append(img)
-    rng.shuffle(choices)
+    random.shuffle(choices)
 
     rule_desc = f"The figure rotates by {step_angle} deg each step."
     prompt_text = "Select the next figure in the rotation sequence."
@@ -366,20 +468,27 @@ def generate_rotation_sequence(rng: random.Random, img_size=(420, 420), shape_si
             "shape": shape,
             "step_angle": step_angle,
             "start_angle": start_angle,
-            "steps_shown": steps
+            "steps_shown": steps,
+            "style_used": bool(style)
         }
     }
 
-def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=220, difficulty="Medium"):
-    shape = rng.choice(SHAPES)
-    mirror_axis = rng.choice(["horizontal", "vertical"])
-    rotation_deg = rng.choice([0, 15, 30, 45, 60, 75, 90])
-    color = rng.choice(COLORS)
+def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=220, difficulty="Medium",
+                           style: Optional[Dict] = None):
+    fills = (style.get("fills") if style else None) or DEFAULT_COLORS
+    outline_color = (style.get("outline") if style else None) or (10, 10, 10)
+    bg_color = (style.get("bg") if style else None) or (255, 255, 255)
+    stroke_w = (style.get("stroke_width") if style else None) or 5
 
-    base = Image.new("RGB", img_size, (255, 255, 255))
+    shape = random.choice(DEFAULT_SHAPES)
+    mirror_axis = random.choice(["horizontal", "vertical"])
+    rotation_deg = random.choice([0, 15, 30, 45, 60, 75, 90])
+    color = random.choice(fills)
+
+    base = Image.new("RGB", img_size, bg_color)
     d = ImageDraw.Draw(base)
     draw_shape(d, shape, (img_size[0] // 2, img_size[1] // 2), shape_size,
-               rotation_deg=rotation_deg, fill=color, outline=(10, 10, 10), width=5)
+               rotation_deg=rotation_deg, fill=color, outline=outline_color, width=stroke_w)
 
     correct = base.transpose(Image.FLIP_LEFT_RIGHT) if mirror_axis == "vertical" else base.transpose(Image.FLIP_TOP_BOTTOM)
     wrong1 = base.transpose(Image.FLIP_TOP_BOTTOM) if mirror_axis == "vertical" else base.transpose(Image.FLIP_LEFT_RIGHT)
@@ -387,7 +496,7 @@ def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=2
     wrong3 = base.rotate(90)
 
     choices = [correct, wrong1, wrong2, wrong3]
-    rng.shuffle(choices)
+    random.shuffle(choices)
 
     rule_desc = f"The correct answer is the {mirror_axis} mirror of the base figure."
     prompt_text = "Which option is the mirror image of the base figure?"
@@ -402,7 +511,8 @@ def generate_mirror_choice(rng: random.Random, img_size=(420, 420), shape_size=2
             "type": "mirror",
             "shape": shape,
             "mirror_axis": mirror_axis,
-            "rotation_deg": rotation_deg
+            "rotation_deg": rotation_deg,
+            "style_used": bool(style)
         }
     }
 
@@ -460,7 +570,7 @@ with st.sidebar:
 
     q_type = st.selectbox(
         "Question type",
-        ["Matrix (3x3)", "Rotation Sequence", "Mirror Image", "Sample (Image)"],
+        ["Matrix (3x3)", "Rotation Sequence", "Mirror Image", "Sample (Image)", "Mimic Sample (Procedural)"],
         index=0
     )
     difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
@@ -479,9 +589,8 @@ with st.sidebar:
     ref_files = st.file_uploader("Upload sample question images (to display or use as a question)",
                                  type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
-    # Sample mode controls
+    # Sample (Image) simple settings
     sample_options_n = 4
-    sample_correct_label = "A"
     sample_prompt = "Answer the question shown in the image."
     sample_rule = "As shown in the image."
     if q_type.startswith("Sample"):
@@ -509,16 +618,59 @@ with st.sidebar:
         sample_correct_label = st.selectbox("Correct label", letters_tmp, index=letters_tmp.index(default_label))
         st.session_state.sample_correct_label = sample_correct_label
 
-        sample_prompt = st.text_input("Prompt", "Answer the question shown in the image.")
-        sample_rule = st.text_input("Rule/Why", "As shown in the image.")
+        sample_prompt = st.text_input("Prompt", sample_prompt)
+        sample_rule = st.text_input("Rule/Why", sample_rule)
+
+    # Mimic Sample (Procedural) settings
+    mimic_forced_rules = None
+    mimic_use_style = False
+    if q_type.startswith("Mimic"):
+        st.markdown("---")
+        st.subheader("Mimic Settings")
+        if ref_files:
+            names = [f.name for f in ref_files]
+            default_idx = 0
+            if "mimic_sel_name" in st.session_state and st.session_state.mimic_sel_name in names:
+                default_idx = names.index(st.session_state.mimic_sel_name)
+            sel_name2 = st.selectbox("Choose sample image for style", names, index=default_idx, key="mimic_image_select")
+            st.session_state.mimic_sel_name = sel_name2
+            for f in ref_files:
+                if f.name == sel_name2:
+                    st.session_state.mimic_image_bytes = f.getvalue()
+                    break
+            mimic_use_style = True
+        else:
+            st.info("Upload a sample image above. The generator will extract palette and stroke to mimic it.")
+
+        st.caption("Optional: Force certain rules to match the sample's logic more closely.")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            r_rotation = st.checkbox("Rule: rotation", value=True)
+            r_count = st.checkbox("Rule: count", value=True)
+        with col_m2:
+            r_color = st.checkbox("Rule: color alternation", value=False)
+            r_size = st.checkbox("Rule: size change", value=False)
+
+        # Advanced parameters (small, only shown if rule checked)
+        rotation_step_val = st.selectbox("Rotation step (deg)", [0, 30, 45, 60, 90], index=2) if r_rotation else 0
+        size_step_val = st.selectbox("Size step per row (px)", [-30, -20, -10, 10, 20, 30], index=4) if r_size else 0
+        base_count_val = st.number_input("Base count (top row)", min_value=1, max_value=4, value=1, step=1) if r_count else 1
+
+        mimic_forced_rules = {
+            "rotation": r_rotation,
+            "count": r_count,
+            "color": r_color,
+            "size": r_size,
+            "rotation_step": rotation_step_val,
+            "size_step": size_step_val,
+            "base_count": base_count_val
+        }
 
     st.markdown("---")
     st.subheader("Generate")
     auto_generate = st.checkbox("Auto-generate when settings change", value=False)
     trigger_sidebar = st.button("Generate New Question", type="primary", use_container_width=True)
     st.caption("Tip: Change settings above, then click Generate. Or enable auto-generate.")
-
-colQ, colA = st.columns([2.1, 1.4])
 
 # RNG init
 seed = None
@@ -538,11 +690,15 @@ current_settings = {
     "ollama_host": ollama_host,
     "ollama_model": ollama_model,
     "temperature": temperature,
+    # sample
     "sample_sel_name": st.session_state.get("sample_sel_name"),
     "sample_options_n": int(sample_options_n),
     "sample_correct_label": st.session_state.get("sample_correct_label", "A"),
     "sample_prompt": sample_prompt,
     "sample_rule": sample_rule,
+    # mimic
+    "mimic_sel_name": st.session_state.get("mimic_sel_name"),
+    "mimic_forced_rules": mimic_forced_rules,
 }
 prev_settings = st.session_state.get("prev_settings")
 settings_changed = (prev_settings is not None) and (prev_settings != current_settings)
@@ -552,6 +708,22 @@ st.session_state.prev_settings = current_settings
 trigger = ("qpack" not in st.session_state) or trigger_sidebar or (auto_generate and settings_changed)
 
 if trigger:
+    # Default style (None) or extracted from sample for Mimic mode
+    extracted_style = None
+    if q_type.startswith("Mimic"):
+        sample_bytes = st.session_state.get("mimic_image_bytes")
+        if (sample_bytes is None) and ref_files:
+            sample_bytes = ref_files[0].getvalue()
+            st.session_state.mimic_sel_name = ref_files[0].name
+            st.session_state.mimic_image_bytes = sample_bytes
+        if sample_bytes:
+            try:
+                style_img = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
+                extracted_style = extract_style_from_image(style_img, n_colors=6)
+            except Exception:
+                extracted_style = None
+
+    # Generate by mode
     if q_type.startswith("Matrix"):
         pack = generate_matrix_reasoning(rng, difficulty=difficulty)
         q_id = f"matrix-{int(time.time())}"
@@ -563,12 +735,13 @@ if trigger:
         meta = pack["meta"]
         qtype_meta = "matrix"
 
-    elif q_type.startswith("Rotation"):
+    elif q_type.startswith("Rotation Sequence"):
         pack = generate_rotation_sequence(rng, difficulty=difficulty)
         q_id = f"rotation-{int(time.time())}"
         seq = pack["sequence_imgs"]
         tile_size = seq[0].size
         q_font = max(28, int(tile_size[0] * 0.28))
+        # Use same bg as tiles
         problem_img = compose_grid(seq + [text_image("?", size=tile_size, font_size=q_font)], (1, len(seq) + 1))
         choices_imgs = pack["choices_imgs"]
         correct_index = pack["correct_index"]
@@ -577,7 +750,7 @@ if trigger:
         meta = pack["meta"]
         qtype_meta = "rotation"
 
-    elif q_type.startswith("Mirror"):
+    elif q_type.startswith("Mirror Image"):
         pack = generate_mirror_choice(rng, difficulty=difficulty)
         q_id = f"mirror-{int(time.time())}"
         base = pack["base_img"]
@@ -591,15 +764,13 @@ if trigger:
         meta = pack["meta"]
         qtype_meta = "mirror"
 
-    else:
-        # Sample (Image)
+    elif q_type.startswith("Sample (Image)"):
         q_id = f"sample-{int(time.time())}"
         sample_bytes = st.session_state.get("sample_image_bytes")
         if (sample_bytes is None) and ref_files:
             sample_bytes = ref_files[0].getvalue()
             st.session_state.sample_sel_name = ref_files[0].name
             st.session_state.sample_image_bytes = sample_bytes
-
         if sample_bytes:
             try:
                 problem_img = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
@@ -625,7 +796,37 @@ if trigger:
             "options_count": n_opts
         }
 
-    # Prepare choices with overlays
+    else:
+        # Mimic Sample (Procedural) -> generate a matrix using extracted style and optionally forced rules
+        q_id = f"mimic-{int(time.time())}"
+        # If style not available, fall back gracefully
+        style_used = extracted_style if extracted_style else None
+
+        # Generate a matrix (most common pattern for samples)
+        pack = generate_matrix_reasoning(
+            rng,
+            difficulty=difficulty,
+            style=style_used,
+            forced_rules=mimic_forced_rules
+        )
+        # Compose with mimic background if present
+        bg_for_grid = style_used.get("bg") if style_used else (255, 255, 255)
+        problem_img = compose_grid(pack["grid_imgs"], pack["grid_size"], bg=bg_for_grid)
+        choices_imgs = pack["choices_imgs"]
+        correct_index = pack["correct_index"]
+        prompt_text = "Which option completes the matrix in the style of the sample?"
+        rule_desc = pack["rule_desc"]
+        meta = pack["meta"]
+        if style_used:
+            meta["mimic_style"] = {
+                "bg": style_used["bg"],
+                "outline": style_used["outline"],
+                "fills": style_used["fills"],
+                "stroke_width": style_used["stroke_width"]
+            }
+        qtype_meta = "mimic"
+
+    # Prepare labeled choices overlay (uniform UX)
     labels = [chr(ord('A') + i) for i in range(len(choices_imgs))]
     labeled_choices = []
     for i, img in enumerate(choices_imgs):
@@ -684,11 +885,6 @@ if qp:
         st.image(qp["problem_img"], use_container_width=True)
         st.write(qp["prompt"])
 
-        # Show uploaded references as an expandable gallery
-        if "ref_files_cache" not in st.session_state:
-            st.session_state.ref_files_cache = None
-        if "ref_files_cache" in st.session_state and ref_files:
-            st.session_state.ref_files_cache = ref_files
         if ref_files:
             with st.expander("Reference samples (uploaded)"):
                 st.image(ref_files, use_container_width=True)
