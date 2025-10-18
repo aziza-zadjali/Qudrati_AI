@@ -6,12 +6,7 @@ Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
 - 3D isometric cube rotation
 - Shape assembly (which set forms the target?)
 - Difficulty tiers: سهل / متوسط / صعب
-
-Key UX fix: every question now shows a clear **reference stem** image at the top:
-- Left: المصدر/المجسّم أو اللوحة الأصلية
-- Center: سهم تدوير مع زاوية (أو سهم طيّ)
-- Right: صندوق تلميح شفاف (لا يكشف الحل) — فقط لبيان المطلوب
-Options تُعرض أسفلها دائمًا.
+- Thick, crisp strokes everywhere (STYLE + render scale)
 
 File path: pages/7_spacial_questions.py
 """
@@ -36,6 +31,21 @@ LOGO_PATH = ROOT / "MOL_logo.png"
 AR_LETTERS = ["أ", "ب", "ج", "د"]
 RNG = random.Random()
 
+# ---- Global style knobs (easy tuning) ----
+STYLE = {
+    "grid": 6,          # cross/diagonal grid lines
+    "square": 6,        # outer board squares
+    "glyph": 6,         # plus/L/half-circle thickness
+    "circle": 5,        # circle stroke
+    "arrow": 6,         # rotation/fold arrow
+    "iso_edge": 3,      # isometric cube edge width
+    "dash": 4,          # dashed fold line width
+}
+
+# Scale up rendering; then downscale to keep lines crisp after Streamlit resizing
+CANVAS_SCALE = 1.7  # try 1.5–2.0 for even bolder look
+
+
 # ------------------ LLM (optional via Ollama) ----------------------
 try:
     import requests  # type: ignore
@@ -44,7 +54,6 @@ except Exception:  # pragma: no cover
 
 
 def ollama_chat_or_fallback(system: str, user: str, model: str, enabled: bool = True, max_tokens: int = 256) -> str:
-    """Use local Ollama if available/enabled; otherwise return the provided user text."""
     if not enabled or requests is None:
         return user
     try:
@@ -69,10 +78,22 @@ def ollama_chat_or_fallback(system: str, user: str, model: str, enabled: bool = 
 
 # ---------------------- Helpers: drawing ---------------------------
 def new_canvas(w: int, h: int, bg=(255, 255, 255)) -> Image.Image:
-    return Image.new("RGB", (w, h), bg)
+    W = int(w * CANVAS_SCALE)
+    H = int(h * CANVAS_SCALE)
+    return Image.new("RGB", (W, H), bg)
 
 
-def dashed_line(draw: ImageDraw.ImageDraw, start, end, dash_len=6, gap_len=6, fill=(0, 0, 0), width=1):
+def _finalize_for_display(img: Image.Image, target_size: Tuple[int, int] | None = None) -> Image.Image:
+    if CANVAS_SCALE == 1.0 and target_size is None:
+        return img
+    if target_size:
+        return img.resize((int(target_size[0]), int(target_size[1])), Image.LANCZOS)
+    return img.resize((int(img.width / CANVAS_SCALE), int(img.height / CANVAS_SCALE)), Image.LANCZOS)
+
+
+def dashed_line(draw: ImageDraw.ImageDraw, start, end, dash_len=10, gap_len=8, fill=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["dash"]
     x1, y1 = start
     x2, y2 = end
     total_len = math.hypot(x2 - x1, y2 - y1)
@@ -92,17 +113,33 @@ def dashed_line(draw: ImageDraw.ImageDraw, start, end, dash_len=6, gap_len=6, fi
         dist += dash_len + gap_len
 
 
-def draw_square(draw: ImageDraw.ImageDraw, xy, size, outline=(0, 0, 0), width=3):
+def poly_with_width(draw: ImageDraw.ImageDraw, pts, fill=None, outline=(0, 0, 0), width=1):
+    if fill is not None:
+        draw.polygon(pts, fill=fill)
+    if outline is not None and width > 0:
+        for i in range(len(pts)):
+            a = pts[i]
+            b = pts[(i + 1) % len(pts)]
+            draw.line([a, b], fill=outline, width=width)
+
+
+def draw_square(draw: ImageDraw.ImageDraw, xy, size, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["square"]
     x, y = xy
     draw.rectangle([x, y, x + size, y + size], outline=outline, width=width)
 
 
-def draw_circle(draw: ImageDraw.ImageDraw, center, r, fill=None, outline=(0, 0, 0), width=3):
+def draw_circle(draw: ImageDraw.ImageDraw, center, r, fill=None, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["circle"]
     cx, cy = center
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill, outline=outline, width=width)
 
 
-def draw_half_circle(draw: ImageDraw.ImageDraw, center, r, orientation: str = "up", outline=(0, 0, 0), width=3):
+def draw_half_circle(draw: ImageDraw.ImageDraw, center, r, orientation: str = "up", outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["glyph"]
     cx, cy = center
     bbox = [cx - r, cy - r, cx + r, cy + r]
     start_map = {"up": 0, "right": 90, "down": 180, "left": 270}
@@ -110,67 +147,88 @@ def draw_half_circle(draw: ImageDraw.ImageDraw, center, r, orientation: str = "u
     draw.pieslice(bbox, start=start_map[orientation], end=end_map[orientation], fill=None, outline=outline, width=width)
 
 
-def draw_triangle(draw: ImageDraw.ImageDraw, pts, fill=None, outline=(0, 0, 0), width=3):
-    draw.polygon(pts, fill=fill, outline=outline)
+def draw_triangle(draw: ImageDraw.ImageDraw, pts, fill=None, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["glyph"]
+    poly_with_width(draw, pts, fill=fill, outline=outline, width=width)
 
 
-def draw_plus(draw: ImageDraw.ImageDraw, center, size, width=6, fill=(0, 0, 0)):
+def draw_plus(draw: ImageDraw.ImageDraw, center, size, width=None, fill=(0, 0, 0)):
+    if width is None:
+        width = STYLE["glyph"]
     cx, cy = center
     s = size // 2
     draw.line((cx - s, cy, cx + s, cy), fill=fill, width=width)
     draw.line((cx, cy - s, cx, cy + s), fill=fill, width=width)
 
 
-def draw_diamond(draw: ImageDraw.ImageDraw, center, size, fill=None, outline=(0, 0, 0), width=3):
+def draw_diamond(draw: ImageDraw.ImageDraw, center, size, fill=None, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["glyph"]
     cx, cy = center
     s = size // 2
     pts = [(cx, cy - s), (cx + s, cy), (cx, cy + s), (cx - s, cy)]
-    draw.polygon(pts, fill=fill, outline=outline)
+    poly_with_width(draw, pts, fill=fill, outline=outline, width=width)
 
 
-def draw_star(draw: ImageDraw.ImageDraw, center, r, points=5, outline=(0, 0, 0), width=3):
+def draw_star(draw: ImageDraw.ImageDraw, center, r, points=5, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["glyph"]
     cx, cy = center
     pts = []
     for i in range(points * 2):
         angle = math.pi * i / points
         rr = r if i % 2 == 0 else r * 0.45
         pts.append((cx + rr * math.cos(angle - math.pi / 2), cy + rr * math.sin(angle - math.pi / 2)))
-    draw.line(pts + [pts[0]], fill=outline, width=width, joint="curve")
+    poly_with_width(draw, pts, fill=None, outline=outline, width=width)
 
 
-def draw_L(draw: ImageDraw.ImageDraw, center, size, outline=(0, 0, 0), width=6):
+def draw_L(draw: ImageDraw.ImageDraw, center, size, outline=(0, 0, 0), width=None):
+    if width is None:
+        width = STYLE["glyph"]
     cx, cy = center
     s = size
     draw.line((cx - s // 2, cy - s // 2, cx - s // 2, cy + s // 2), fill=outline, width=width)
     draw.line((cx - s // 2, cy + s // 2, cx + s // 2, cy + s // 2), fill=outline, width=width)
 
 
-def draw_rot_arrow(img: Image.Image, caption: str = "", bold: bool = False) -> Image.Image:
-    """Curved rotation arrow on transparent background with optional caption."""
-    w, h = 220, 220
+def draw_rot_arrow(img: Image.Image | None = None, caption: str = "", bold: bool = False) -> Image.Image:
+    w, h = int(220 * CANVAS_SCALE), int(220 * CANVAS_SCALE)
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(canvas)
-    d.arc([30, 30, w - 30, h - 30], start=210, end=-30, fill=(0, 0, 0, 255), width=6 if bold else 4)
+    d.arc([30, 30, w - 30, h - 30], start=210, end=-30, fill=(0, 0, 0, 255), width=STYLE["arrow"] if bold else max(4, STYLE["arrow"] - 2))
     d.polygon([(w - 45, h // 2 - 10), (w - 85, h // 2 - 6), (w - 70, h // 2 - 28)], fill=(0, 0, 0, 255))
     if caption:
         try:
-            f = ImageFont.truetype("DejaVuSans.ttf", 20)
+            f = ImageFont.truetype("DejaVuSans.ttf", int(20 * CANVAS_SCALE))
         except Exception:
             f = None
-        d.text((w // 2, h - 26), caption, fill=(0, 0, 0, 255), anchor="mm", font=f)
+        d.text((w // 2, h - int(26 * CANVAS_SCALE)), caption, fill=(0, 0, 0, 255), anchor="mm", font=f)
     return canvas.convert("RGB")
 
 
 def faint_hint_box(side=220, text="؟") -> Image.Image:
     img = new_canvas(side, side)
     d = ImageDraw.Draw(img)
-    draw_square(d, (10, 10), side - 20, outline=(150, 150, 150), width=2)
+    draw_square(d, (10, 10), int(side * CANVAS_SCALE) - 20, outline=(150, 150, 150), width=max(2, STYLE["square"] - 2))
     try:
-        f = ImageFont.truetype("DejaVuSans.ttf", 72)
+        f = ImageFont.truetype("DejaVuSans.ttf", int(72 * CANVAS_SCALE))
     except Exception:
         f = None
-    d.text((side // 2, side // 2), text, fill=(170, 170, 170), anchor="mm", font=f)
+    d.text((img.width // 2, img.height // 2), text, fill=(170, 170, 170), anchor="mm", font=f)
     return img
+
+
+def hstack(*imgs: Image.Image, pad: int = 16, bg=(255, 255, 255)) -> Image.Image:
+    H = max(im.height for im in imgs)
+    W = sum(im.width for im in imgs) + int(pad * CANVAS_SCALE) * (len(imgs) - 1)
+    out = Image.new("RGB", (W, H), bg)
+    x = 0
+    for idx, im in enumerate(imgs):
+        y = (H - im.height) // 2
+        out.paste(im, (x, y))
+        x += im.width + int(pad * CANVAS_SCALE)
+    return out
 
 
 # ---------------------- Utilities ---------------------------------
@@ -183,19 +241,6 @@ def bytes_from_img(img: Image.Image) -> bytes:
 def images_unique(imgs: List[Image.Image]) -> bool:
     sigs = [img.tobytes() for img in imgs]
     return len(sigs) == len(set(sigs))
-
-
-def hstack(*imgs: Image.Image, pad: int = 16, bg=(255, 255, 255)) -> Image.Image:
-    """Horizontal stack with padding, vertically centered."""
-    H = max(im.height for im in imgs)
-    W = sum(im.width for im in imgs) + pad * (len(imgs) - 1)
-    out = Image.new("RGB", (W, H), bg)
-    x = 0
-    for im in imgs:
-        y = (H - im.height) // 2
-        out.paste(im, (x, y))
-        x += im.width + pad
-    return out
 
 
 @dataclass
@@ -211,74 +256,70 @@ class Question:
 def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
     RNG.seed(seed)
 
-    # Build stem parts
-    base_size = 220
+    base_size = 240
     folded = new_canvas(base_size, base_size)
     d = ImageDraw.Draw(folded)
-    draw_square(d, (10, 10), base_size - 20)
-    fold_dir = RNG.choice(["h", "v"])
-    # Fold guide
-    if fold_dir == "h":
-        dashed_line(d, (10, base_size // 2), (base_size - 10, base_size // 2), width=3)
-    else:
-        dashed_line(d, (base_size // 2, 10), (base_size // 2, base_size - 10), width=3)
+    draw_square(d, (10, 10), folded.width - 20)
 
-    # Random holes
+    fold_dir = RNG.choice(["h", "v"])
+    if fold_dir == "h":
+        dashed_line(d, (10, folded.height // 2), (folded.width - 10, folded.height // 2))
+    else:
+        dashed_line(d, (folded.width // 2, 10), (folded.width // 2, folded.height - 10))
+
     n_by_level = {"سهل": (1, 2), "متوسط": (2, 3), "صعب": (3, 4)}
     lo, hi = n_by_level.get(difficulty, (1, 2))
     holes = RNG.randint(lo, hi)
     pts = []
     for _ in range(holes):
-        x = RNG.randint(40, base_size - 40)
-        y = RNG.randint(40, base_size - 40)
-        if fold_dir == "h" and y > base_size // 2:
-            y = base_size - y
-        if fold_dir == "v" and x < base_size // 2:
-            x = base_size - x
+        x = RNG.randint(int(40 * CANVAS_SCALE), folded.width - int(40 * CANVAS_SCALE))
+        y = RNG.randint(int(40 * CANVAS_SCALE), folded.height - int(40 * CANVAS_SCALE))
+        if fold_dir == "h" and y > folded.height // 2:
+            y = folded.height - y
+        if fold_dir == "v" and x < folded.width // 2:
+            x = folded.width - x
         pts.append((x, y))
     for (x, y) in pts:
-        draw_circle(d, (x, y), 12, outline=(0, 0, 0), width=4)
+        draw_circle(d, (x, y), int(12 * CANVAS_SCALE))
 
-    # Stem: folded sheet + arrow + hint
-    stem = hstack(folded, draw_rot_arrow(caption="افتح"), faint_hint_box())
+    stem = hstack(folded, draw_rot_arrow(caption="افتح", bold=True), faint_hint_box())
 
-    # Unfold logic
     def mirror(p):
         x, y = p
         if fold_dir == "h":
-            return (x, base_size - y)
-        return (base_size - x, y)
+            return (x, folded.height - y)
+        return (folded.width - x, y)
 
     def render_unfolded(correct=True, jitter=0):
-        S = base_size
-        img = new_canvas(S, S)
+        img = new_canvas(base_size, base_size)
         dd = ImageDraw.Draw(img)
-        draw_square(dd, (10, 10), S - 20)
-        # original holes
+        draw_square(dd, (10, 10), img.width - 20)
         for (x, y) in pts:
-            draw_circle(dd, (x, y), 12, outline=(0, 0, 0), width=4)
-        # mirrored holes (or wrong variants)
+            draw_circle(dd, (x, y), int(12 * CANVAS_SCALE))
         for (x, y) in pts:
             mx, my = mirror((x, y))
             if not correct and jitter:
-                # displace to fake reflection
                 mx += RNG.choice([-jitter, jitter])
                 my += RNG.choice([-jitter, jitter])
-            draw_circle(dd, (mx, my), 12, outline=(0, 0, 0), width=4)
+            draw_circle(dd, (mx, my), int(12 * CANVAS_SCALE))
         return img
 
-    correct_img = render_unfolded(correct=True)
-    wrong1 = render_unfolded(correct=False, jitter=16 if difficulty != "سهل" else 10)
+    correct_img = render_unfolded(True)
+    wrong1 = render_unfolded(False, jitter=int(14 * CANVAS_SCALE) if difficulty != "سهل" else int(10 * CANVAS_SCALE))
     wrong2 = ImageOps.mirror(correct_img) if fold_dir == "h" else ImageOps.flip(correct_img)
-    wrong3 = new_canvas(correct_img.width, correct_img.height)  # missing mirrors
+    wrong3 = new_canvas(base_size, base_size)
     d3 = ImageDraw.Draw(wrong3)
-    draw_square(d3, (10, 10), base_size - 20)
+    draw_square(d3, (10, 10), wrong3.width - 20)
     for (x, y) in pts:
-        draw_circle(d3, (x, y), 12, outline=(0, 0, 0), width=4)
+        draw_circle(d3, (x, y), int(12 * CANVAS_SCALE))
 
     options = [correct_img, wrong1, wrong2, wrong3]
     RNG.shuffle(options)
     correct_index = options.index(correct_img)
+
+    # finalize sizes
+    stem = _finalize_for_display(stem)
+    options = [_finalize_for_display(o) for o in options]
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
@@ -305,28 +346,28 @@ def glyph_pool(variable_mode: bool, difficulty: str):
 
 def draw_glyph(draw: ImageDraw.ImageDraw, glyph: str, center: Tuple[int, int], size: int):
     if glyph == "plus":
-        draw_plus(draw, center, size, width=6)
+        draw_plus(draw, center, size)
     elif glyph == "diamond":
-        draw_diamond(draw, center, size - 6, outline=(0, 0, 0))
+        draw_diamond(draw, center, size - int(4 * CANVAS_SCALE))
     elif glyph == "circle":
-        draw_circle(draw, center, (size // 2) - 4, outline=(0, 0, 0), width=4)
+        draw_circle(draw, center, (size // 2) - int(2 * CANVAS_SCALE))
     elif glyph == "triangle":
         cx, cy = center
         half = (size // 2)
         pts = [(cx - half, cy + half), (cx + half, cy + half), (cx, cy - half)]
-        draw_triangle(draw, pts, outline=(0, 0, 0))
+        draw_triangle(draw, pts)
     elif glyph == "star":
-        draw_star(draw, center, (size // 2) - 2, outline=(0, 0, 0))
+        draw_star(draw, center, (size // 2) - int(2 * CANVAS_SCALE))
     elif glyph == "half_up":
-        draw_half_circle(draw, center, (size // 2) - 2, orientation="up", outline=(0, 0, 0))
+        draw_half_circle(draw, center, (size // 2) - int(2 * CANVAS_SCALE), orientation="up")
     elif glyph == "half_right":
-        draw_half_circle(draw, center, (size // 2) - 2, orientation="right", outline=(0, 0, 0))
+        draw_half_circle(draw, center, (size // 2) - int(2 * CANVAS_SCALE), orientation="right")
     elif glyph == "square_small":
         cx, cy = center
-        s = size - 10
-        draw_square(draw, (cx - s // 2, cy - s // 2), s, outline=(0, 0, 0), width=3)
+        s = size - int(8 * CANVAS_SCALE)
+        draw_square(draw, (cx - s // 2, cy - s // 2), s)
     elif glyph == "L":
-        draw_L(draw, center, size, outline=(0, 0, 0), width=6)
+        draw_L(draw, center, size)
 
 
 # ---------------------- Boards & stems (2D) ------------------------
@@ -334,21 +375,23 @@ def board_cross(canvas_size=260, seed=0, variable_mode: bool = True, difficulty:
     RNG.seed(seed)
     img = new_canvas(canvas_size, canvas_size)
     d = ImageDraw.Draw(img)
-    draw_square(d, (10, 10), canvas_size - 20)
-    mid = canvas_size // 2
-    d.line((10, mid, canvas_size - 10, mid), fill=(0, 0, 0), width=3)
-    d.line((mid, 10, mid, canvas_size - 10), fill=(0, 0, 0), width=3)
+    draw_square(d, (10, 10), img.width - 20)
+    midx = img.width // 2
+    midy = img.height // 2
+    d.line((10, midy, img.width - 10, midy), fill=(0, 0, 0), width=STYLE["grid"])
+    d.line((midx, 10, midx, img.height - 10), fill=(0, 0, 0), width=STYLE["grid"])
 
     pool = glyph_pool(variable_mode, difficulty)
     RNG.shuffle(pool)
     chosen = pool[:4]
 
     jitter = {"سهل": 6, "متوسط": 10, "صعب": 16}[difficulty]
-    offset = 60 if difficulty != "صعب" else 56
-    locs = [(mid - offset, mid - offset), (mid + offset, mid - offset), (mid - offset, mid + offset), (mid + offset, mid + offset)]
+    jitter = int(jitter * CANVAS_SCALE)
+    offset = int((60 if difficulty != "صعب" else 56) * CANVAS_SCALE)
+    locs = [(midx - offset, midy - offset), (midx + offset, midy - offset), (midx - offset, midy + offset), (midx + offset, midy + offset)]
 
     for glyph, (cx, cy) in zip(chosen, locs):
-        draw_glyph(ImageDraw.Draw(img), glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), size=40)
+        draw_glyph(d, glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), size=int(40 * CANVAS_SCALE))
     return img
 
 
@@ -356,23 +399,24 @@ def board_diag(canvas_size=260, seed=0, variable_mode: bool = True, difficulty: 
     RNG.seed(seed)
     img = new_canvas(canvas_size, canvas_size)
     d = ImageDraw.Draw(img)
-    draw_square(d, (10, 10), canvas_size - 20)
-    d.line((10, 10, canvas_size - 10, canvas_size - 10), fill=(0, 0, 0), width=3)
-    d.line((10, canvas_size - 10, canvas_size - 10, 10), fill=(0, 0, 0), width=3)
+    draw_square(d, (10, 10), img.width - 20)
+    d.line((10, 10, img.width - 10, img.height - 10), fill=(0, 0, 0), width=STYLE["grid"])
+    d.line((10, img.height - 10, img.width - 10, 10), fill=(0, 0, 0), width=STYLE["grid"])
     pool = glyph_pool(variable_mode, difficulty)
     RNG.shuffle(pool)
     chosen = pool[:3]
-    mid = canvas_size // 2
-    base = 65 if difficulty != "صعب" else 60
-    jitter = {"سهل": 6, "متوسط": 10, "صعب": 14}[difficulty]
-    slots = [(mid - base, mid - base), (mid + base, mid - base), (mid - base, mid + base)]
+    midx = img.width // 2
+    midy = img.height // 2
+    base = int((65 if difficulty != "صعب" else 60) * CANVAS_SCALE)
+    jitter = int({"سهل": 6, "متوسط": 10, "صعب": 14}[difficulty] * CANVAS_SCALE)
+    slots = [(midx - base, midy - base), (midx + base, midy - base), (midx - base, midy + base)]
     for glyph, (cx, cy) in zip(chosen, slots):
-        draw_glyph(d, glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), 40)
+        draw_glyph(d, glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), int(40 * CANVAS_SCALE))
     return img
 
 
 def stem_with_rotation(source_img: Image.Image, angle: int) -> Image.Image:
-    return hstack(source_img, draw_rot_arrow(caption=f"{angle}°"), faint_hint_box())
+    return hstack(source_img, draw_rot_arrow(caption=f"{angle}°", bold=True), faint_hint_box())
 
 
 def rotate_image(img: Image.Image, angle_deg: int, allow_mirror=False) -> Image.Image:
@@ -399,9 +443,13 @@ def quadrant_rotation_question(seed: int = 0, difficulty: str = "سهل", variab
     RNG.shuffle(options)
     correct_index = options.index(correct)
 
+    # finalize
+    stem = _finalize_for_display(stem)
+    options = [_finalize_for_display(o) for o in options]
+
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
-        sys, f"انظر إلى اللوحة على اليسار. أيُّ بديل يطابقها بعد تدويرها {angle}°؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
+        sys, f"انظر إلى اللوحة على اليسار. أيُّ بديل يطابقها بعد تدويرها {angle}°؟", model=st.session_state.get("llم_model", "qwen2.5:3b") if "llم_model" in st.session_state else st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
     expl = ollama_chat_or_fallback(
         sys, "الصحيح يحافظ على ترتيب الرموز بالنسبة للمحاور بعد الدوران دون أي انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
@@ -425,6 +473,10 @@ def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True, diffic
     options = [correct] + distract
     RNG.shuffle(options)
     correct_index = options.index(correct)
+
+    # finalize
+    stem = _finalize_for_display(stem)
+    options = [_finalize_for_display(o) for o in options]
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
@@ -471,25 +523,26 @@ def iso_project(pt: Tuple[int, int, int], scale=28) -> Tuple[float, float]:
 def draw_iso_cubes(coords: List[Tuple[int, int, int]], size=28, img_size=(260, 240)) -> Image.Image:
     img = new_canvas(*img_size)
     d = ImageDraw.Draw(img)
-    us = [iso_project(p, size) for p in coords]
+    us = [iso_project(p, size * CANVAS_SCALE) for p in coords]
     minx = min(u for u, _ in us)
     maxx = max(u for u, _ in us)
     miny = min(v for _, v in us)
     maxy = max(v for _, v in us)
-    cx = (img_size[0] - (maxx - minx)) / 2 - minx
-    cy = (img_size[1] - (maxy - miny)) / 2 - miny
+    cx = (img.width - (maxx - minx)) / 2 - minx
+    cy = (img.height - (maxy - miny)) / 2 - miny
     order = sorted(range(len(coords)), key=lambda i: sum(coords[i]))
     for i in order:
         x, y, z = coords[i]
-        u, v = iso_project((x, y, z), size)
+        u, v = iso_project((x, y, z), size * CANVAS_SCALE)
         u += cx
         v += cy
-        top = [(u, v - size), (u + size * 0.5, v - size * 0.5), (u, v), (u - size * 0.5, v - size * 0.5)]
-        right = [(u, v), (u + size * 0.5, v - size * 0.5), (u + size * 0.5, v + size * 0.5), (u, v + size)]
-        left = [(u, v), (u - size * 0.5, v - size * 0.5), (u - size * 0.5, v + size * 0.5), (u, v + size)]
-        d.polygon(top, fill=(220, 220, 220), outline=(0, 0, 0))
-        d.polygon(right, fill=(190, 190, 190), outline=(0, 0, 0))
-        d.polygon(left, fill=(160, 160, 160), outline=(0, 0, 0))
+        S = size * CANVAS_SCALE
+        top = [(u, v - S), (u + S * 0.5, v - S * 0.5), (u, v), (u - S * 0.5, v - S * 0.5)]
+        right = [(u, v), (u + S * 0.5, v - S * 0.5), (u + S * 0.5, v + S * 0.5), (u, v + S)]
+        left = [(u, v), (u - S * 0.5, v - S * 0.5), (u - S * 0.5, v + S * 0.5), (u, v + S)]
+        poly_with_width(d, top, fill=(220, 220, 220), outline=(0, 0, 0), width=STYLE["iso_edge"])
+        poly_with_width(d, right, fill=(190, 190, 190), outline=(0, 0, 0), width=STYLE["iso_edge"])
+        poly_with_width(d, left, fill=(160, 160, 160), outline=(0, 0, 0), width=STYLE["iso_edge"])
     return img
 
 
@@ -524,17 +577,14 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
     n = {"سهل": 4, "متوسط": 5, "صعب": 6}[difficulty]
     shape = random_polycube(n=n, seed=seed)
 
-    # Stem: show the original 3D model ONLY (no giveaway) + rotation arrow + hint box
     src_img = draw_iso_cubes(shape, img_size=(260, 240))
-    angle_txt = RNG.choice(["90°", "180°", "270°"])  # just a cue; actual rotations are in options via matrices
+    angle_txt = RNG.choice(["90°", "180°", "270°"])
     stem = hstack(src_img, draw_rot_arrow(caption=f"دوِّر {angle_txt}", bold=True), faint_hint_box())
 
-    # Correct orientation (random matrix)
     R_true = RNG.choice(ORIENTS)
     correct_coords = apply_rot(shape, R_true)
     correct_img = draw_iso_cubes(correct_coords, img_size=(240, 220))
 
-    # Distractors: different valid orientations (not equal to correct)
     used = {tuple(map(int, np.rint(R_true).flatten()))}
     options: List[Image.Image] = [correct_img]
     while len(options) < 4:
@@ -547,6 +597,10 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
 
     RNG.shuffle(options)
     correct_index = options.index(correct_img)
+
+    # finalize
+    stem = _finalize_for_display(stem)
+    options = [_finalize_for_display(o) for o in options]
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
@@ -563,46 +617,45 @@ def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
     RNG.seed(seed)
     target = RNG.choice(["square", "pentagon"])
 
-    # Stem target (right) + hint
     if target == "square":
         tgt = new_canvas(240, 240)
-        draw_square(ImageDraw.Draw(tgt), (20, 20), 200)
+        draw_square(ImageDraw.Draw(tgt), (10, 10), tgt.width - 20)
     else:
         tgt = new_canvas(240, 240)
         d = ImageDraw.Draw(tgt)
-        cx, cy, r = 120, 120, 95
+        cx, cy, r = tgt.width // 2, tgt.height // 2, int(95 * CANVAS_SCALE)
         pts = [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(-math.pi / 2, 1.5 * math.pi, 6)[:-1]]
-        d.polygon(pts, outline=(0, 0, 0), fill=None)
+        poly_with_width(d, pts, fill=None, outline=(0, 0, 0), width=STYLE["square"])
+
     stem = hstack(faint_hint_box(text="ركّب"), draw_rot_arrow(caption=""), tgt)
 
-    # Options (groups of pieces)
     def tri_img(angle=0, flip=False):
-        S = 120
-        pad = 8
+        S = int(120 * CANVAS_SCALE)
+        pad = int(8 * CANVAS_SCALE)
         im = new_canvas(S + pad * 2, S + pad * 2)
         dr = ImageDraw.Draw(im)
         pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + 10, pad + S - 10)]
         if flip:
             pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + S - 10, pad + S - 10)]
-        draw_triangle(dr, pts, outline=(0, 0, 0))
+        draw_triangle(dr, pts)
         return im.rotate(angle, expand=True, fillcolor=(255, 255, 255))
 
     def panel(imgs: List[Image.Image]) -> Image.Image:
-        w = sum(i.width for i in imgs) + 20 * (len(imgs) - 1) + 40
-        h = max(i.height for i in imgs) + 40
+        w = sum(i.width for i in imgs) + int(20 * CANVAS_SCALE) * (len(imgs) - 1) + int(40 * CANVAS_SCALE)
+        h = max(i.height for i in imgs) + int(40 * CANVAS_SCALE)
         out = new_canvas(w, h)
-        x = 20
+        x = int(20 * CANVAS_SCALE)
         for im in imgs:
             out.paste(im, (x, (h - im.height) // 2))
-            x += im.width + 20
+            x += im.width + int(20 * CANVAS_SCALE)
         return out
 
     if target == "square":
         optA = panel([tri_img(), tri_img(angle=180, flip=True)])  # correct
         rect = new_canvas(100, 140)
-        ImageDraw.Draw(rect).rectangle([10, 10, 90, 130], outline=(0, 0, 0), width=3)
+        ImageDraw.Draw(rect).rectangle([int(10 * CANVAS_SCALE), int(10 * CANVAS_SCALE), rect.width - int(10 * CANVAS_SCALE), rect.height - int(10 * CANVAS_SCALE)], outline=(0, 0, 0), width=STYLE["square"])
         rhombus = new_canvas(120, 120)
-        draw_diamond(ImageDraw.Draw(rhombus), (60, 60), 80, outline=(0, 0, 0))
+        draw_diamond(ImageDraw.Draw(rhombus), (rhombus.width // 2, rhombus.height // 2), int(80 * CANVAS_SCALE))
         optB = panel([rect, rhombus])
         optC = panel([tri_img(angle=90), rhombus.rotate(45, expand=True, fillcolor=(255, 255, 255))])
         optD = panel([tri_img(flip=True), rect])
@@ -610,15 +663,19 @@ def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
         correct_index = 0
     else:
         quad = new_canvas(160, 140)
-        ImageDraw.Draw(quad).polygon([(20, 120), (80, 20), (140, 60), (100, 120)], outline=(0, 0, 0), fill=None)
+        ImageDraw.Draw(quad).polygon([(int(20 * CANVAS_SCALE), int(120 * CANVAS_SCALE)), (int(80 * CANVAS_SCALE), int(20 * CANVAS_SCALE)), (int(140 * CANVAS_SCALE), int(60 * CANVAS_SCALE)), (int(100 * CANVAS_SCALE), int(120 * CANVAS_SCALE))], outline=(0, 0, 0), fill=None)
         quad2 = new_canvas(160, 140)
-        ImageDraw.Draw(quad2).polygon([(20, 60), (60, 20), (140, 80), (100, 120)], outline=(0, 0, 0), fill=None)
+        ImageDraw.Draw(quad2).polygon([(int(20 * CANVAS_SCALE), int(60 * CANVAS_SCALE)), (int(60 * CANVAS_SCALE), int(20 * CANVAS_SCALE)), (int(140 * CANVAS_SCALE), int(80 * CANVAS_SCALE)), (int(100 * CANVAS_SCALE), int(120 * CANVAS_SCALE))], outline=(0, 0, 0), fill=None)
         circ = new_canvas(160, 140)
-        ImageDraw.Draw(circ).ellipse([30, 30, 130, 110], outline=(0, 0, 0), width=3)
+        ImageDraw.Draw(circ).ellipse([int(30 * CANVAS_SCALE), int(30 * CANVAS_SCALE), int(130 * CANVAS_SCALE), int(110 * CANVAS_SCALE)], outline=(0, 0, 0), width=STYLE["square"])
         tri = new_canvas(160, 140)
-        draw_triangle(ImageDraw.Draw(tri), [(20, 120), (80, 20), (140, 120)], outline=(0, 0, 0))
+        draw_triangle(ImageDraw.Draw(tri), [(int(20 * CANVAS_SCALE), int(120 * CANVAS_SCALE)), (int(80 * CANVAS_SCALE), int(20 * CANVAS_SCALE)), (int(140 * CANVAS_SCALE), int(120 * CANVAS_SCALE))])
         options = [panel([quad, quad2]), panel([quad, circ]), panel([quad2, tri]), panel([circ, tri])]
         correct_index = 0
+
+    # finalize
+    stem = _finalize_for_display(stem)
+    options = [_finalize_for_display(o) for o in options]
 
     sys = "أنت مساعد تعليمي بالعربية."
     title_hint = "أي مجموعة من القطع يمكن أن تُكوِّن الشكل المطلوب؟"
@@ -641,13 +698,8 @@ with right:
     difficulty = st.selectbox("مستوى الصعوبة", ["سهل", "متوسط", "صعب"])
 
 seed_base = st.sidebar.number_input("البذرة (Seed)", 0, 10_000_000, 12345, help="لإعادة إنتاج نفس العناصر.")
-rand_seed = st.sidebar.button("🎲 بذرة عشوائية")
-if rand_seed:
+if st.sidebar.button("🎲 بذرة عشوائية"):
     seed_base = RNG.randint(0, 10_000_000)
-    st.session_state["_seed_base"] = seed_base
-else:
-    seed_base = st.session_state.get("_seed_base", seed_base)
-
 st.session_state["llm_model"] = st.sidebar.text_input("نموذج Ollama (اختياري)", value="qwen2.5:3b")
 st.session_state["use_llm"] = st.sidebar.checkbox("استخدم LLM لكتابة التعليمات/الشرح", value=True)
 variable_symbols = st.sidebar.toggle("وضع **رموز متغيّرة** (تنويع الرموز)", value=True)
@@ -662,10 +714,10 @@ col1, col2 = st.columns([1, 1])
 with col1:
     gen = st.button("🚀 إنشاء الأسئلة", use_container_width=True)
 with col2:
-    st.caption("كل سؤال يُظهر **المجسّم/اللوحة المرجعية** في الأعلى بوضوح، ثم البدائل بالأسفل.")
+    st.caption("كل سؤال يعرض **المرجع** في الأعلى بوضوح، ثم البدائل بالأسفل. الخطوط سميكة وواضحة.")
 
 st.title("مولّد أسئلة ذكاء مرئية")
-st.write("مطابق لنمط الأمثلة المرفقة. كل تشغيل يعطي **أسئلة مختلفة** بفضل العشوائية المضبوطة بالبذرة.")
+st.write("مطابق لأسلوب اختبارات الذكاء المكانية. كل تشغيل يعطي **أسئلة مختلفة** بفضل العشوائية المضبوطة بالبذرة.")
 
 def build_by_type(kind: str, seed: int) -> Question:
     if kind == "طيّ الورق":
@@ -695,7 +747,6 @@ if gen:
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for idx, kind in enumerate(order, 1):
-            # strong variation
             qseed = seed_base ^ (RNG.randint(1, 1_000_000_007) + idx * 9973)
             q = build_by_type(kind, seed=qseed)
             generated.append(q)
