@@ -422,79 +422,68 @@ def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True,
                    correct_index=correct_index, explanation=expl)
 
 def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
+    # Focus: Choices & stem layout mimic your attached example exactly
     RNG.seed(seed)
-    base_size = 280
-    folded = new_canvas(base_size, base_size)
+    base_size = 210
+    folded = new_canvas(base_size*2, base_size)
     d = ImageDraw.Draw(folded)
-    draw_square(d, (10,10), folded.width-20)
     
-    fold_dir = RNG.choice(["h", "v"])
-    if fold_dir == "h":
-        dashed_line(d, (10, folded.height//2), (folded.width-10, folded.height//2))
-    else:
-        dashed_line(d, (folded.width//2, 10), (folded.width//2, folded.height-10))
+    # Draw rectangle
+    draw_square(d, (5,5), base_size*2 - 10)
+
+    # Draw fold line (vertical or horizontal—here, horizontal as in your sample)
+    fold_dir = "h"
+    d.line((5, base_size//2, base_size*2-5, base_size//2), fill=(0,0,0), width=STYLE["grid"])
+    # Dashed vertical marks (showing where folding occurs)
+    dashed_line(d, (base_size,5), (base_size,base_size-5), dash_len=8, gap_len=6)
+
+    # Arrow indicating fold (top half folds down)
+    arrow = draw_banner_arrow("[translate:إعادة فتح الورقة]", direction="right")
+
+    # Place one or two holes (as seen in your sample: upper right)
+    holes_pts = [(base_size+base_size//2, base_size//4)]
+    for (x, y) in holes_pts:
+        draw_circle(d, (x, y), 15)
     
-    ranges = {"سهل": (1,2), "متوسط": (2,3), "صعب": (3,4)}
-    lo, hi = ranges.get(difficulty, (1,2))
-    holes = RNG.randint(lo, hi)
-    pts: List[Tuple[int,int]] = []
-    for _ in range(holes):
-        x = RNG.randint(int(50*CANVAS_SCALE), folded.width-int(50*CANVAS_SCALE))
-        y = RNG.randint(int(50*CANVAS_SCALE), folded.height-int(50*CANVAS_SCALE))
-        if fold_dir == "h" and y > folded.height//2:
-            y = folded.height - y
-        if fold_dir == "v" and x < folded.width//2:
-            x = folded.width - x
-        pts.append((x, y))
+    # Compose stem image: folded rectangle + arrow
+    stem = hstack(_finalize_for_display(folded, (260,140)), arrow, faint_hint_box(70, text="[translate:؟]"))
     
-    for (x, y) in pts:
-        draw_circle(d, (x, y), int(12*CANVAS_SCALE))
-    
-    stem = compose_stem(folded, banner_text="افتح وفق خط الطيّ")
-    
-    def mirror(p: Tuple[int,int]) -> Tuple[int,int]:
-        x, y = p
-        if fold_dir == "h":
-            return (x, folded.height - y)
-        return (folded.width - x, y)
-    
-    def render_unfolded(correct=True, jitter=0) -> Image.Image:
-        img = new_canvas(base_size, base_size)
-        dd = ImageDraw.Draw(img)
-        draw_square(dd, (10,10), img.width-20)
+    # Render correct unfolded (two holes: one original, one mirrored)
+    def render_unfolded(pts, fold="h"):
+        img = new_canvas(base_size*2, base_size)
+        dr = ImageDraw.Draw(img)
+        draw_square(dr, (5,5), base_size*2 - 10)
         for (x,y) in pts:
-            draw_circle(dd, (x,y), int(12*CANVAS_SCALE))
-        for (x,y) in pts:
-            mx, my = mirror((x,y))
-            if not correct and jitter:
-                mx += RNG.choice([-jitter, jitter])
-                my += RNG.choice([-jitter, jitter])
-            draw_circle(dd, (mx,my), int(12*CANVAS_SCALE))
-        return img
+            draw_circle(dr, (x, y), 15)
+            # Mirror the hole vertically (as in example)
+            dr_y = base_size - y if fold == "h" else y
+            dr_x = x if fold == "h" else base_size*2 - x
+            draw_circle(dr, (dr_x, dr_y), 15)
+        return _finalize_for_display(img, (120,120))
     
-    correct_img = render_unfolded(True)
-    wrong1 = render_unfolded(False, jitter=int(12*CANVAS_SCALE))
-    wrong2 = ImageOps.mirror(correct_img) if fold_dir == "h" else ImageOps.flip(correct_img)
-    wrong3 = new_canvas(base_size, base_size)
-    dd = ImageDraw.Draw(wrong3)
-    draw_square(dd, (10,10), wrong3.width-20)
-    for (x,y) in pts:
-        draw_circle(dd, (x,y), int(12*CANVAS_SCALE))
-    
-    options = [correct_img, wrong1, wrong2, wrong3]
-    RNG.shuffle(options)
-    correct_index = options.index(correct_img)
-    
-    stem = _finalize_for_display(stem)
-    options = [_finalize_for_display(o) for o in options]
-    
-    sys = "أنت مساعد تعليمي بالعربية."
-    title = ollama_chat(sys, "بعد فتح الورقة كما في السهم، أيُّ بديل يطابق نمط الثقوب؟", 
-                       model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat(sys, "الصحيح يُظهر انعكاسًا تامًا حول خط الطيّ مع تكرار الثقوب.", 
-                      model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    return Question(title=title, stem_image=stem, options=options, 
-                   correct_index=correct_index, explanation=expl)
+    # Correct answer: one in top right, one in bottom right
+    opt_a = render_unfolded(holes_pts)
+    # Distractor: holes both top, both bottom, or swapped
+    opt_b = render_unfolded([(base_size//2, base_size//4)]) # left
+    opt_c = render_unfolded([(base_size+base_size//2, 3*base_size//4)]) # right bottom
+    opt_d = render_unfolded([(base_size//2, 3*base_size//4)]) # left bottom
+    options = [opt_a, opt_b, opt_c, opt_d]
+    correct_index = 0
+
+    sys = "[translate:أنت مساعد تعليمي بالعربية.]"
+    title = ollama_chat(sys,
+        "[translate:انظر إلى المثال وحدد الإجابة حسب التعليمات. ما رمز البديل الذي يحتوي على صورة المطابقة بعد إعادة فتح الورقة؟]",
+        model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    expl = ollama_chat(sys,"[translate:الصحيح يُظهر كل الثقوب بعد الطي (أصلي + منعكس للأسفل).]",model=st.session_state.get("llm_model", "qwen2.5:3b"),enabled=use_llm)
+
+    return Question(
+        title=title,
+        stem_image=_finalize_for_display(stem, (400,140)),
+        options=options,
+        correct_index=correct_index,
+        explanation=expl
+    )
+
 
 # Placeholder for cube and assembly questions (add your full implementations here)
 def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
@@ -611,3 +600,4 @@ if gen:
     )
 else:
     st.info(_t("start_generation"))
+
