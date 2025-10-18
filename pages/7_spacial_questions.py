@@ -1,3 +1,4 @@
+```python
 # -*- coding: utf-8 -*-
 """
 Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
@@ -753,11 +754,12 @@ if gen:
 
             with st.container(border=True):
                 st.markdown(f"#### سؤال {idx}: {q.title}")
-                st.image(q.image, use_container_width=True)
+                img_bytes = bytes_from_img(q.image)
+        st.image(img_bytes, use_column_width=True, caption="المرجع")
                 cols = st.columns(4, gap="small")
                 opts = (q.options + [q.options[-1]])[:4] if q.options else []
                 for i, (c, col) in enumerate(zip(opts, cols)):
-                    col.image(c, use_container_width=True)
+                    col.image(bytes_from_img(c), use_column_width=True)
                     col.markdown(
                         f"<div style='text-align:center;font-weight:bold;font-size:20px'>{AR_LETTERS[i]}</div>",
                         unsafe_allow_html=True,
@@ -783,3 +785,4 @@ if gen:
     )
 else:
     st.info("اضغط **إنشاء الأسئلة** لبدء التوليد. كل سؤال يعرض المرجع (المجسّم/اللوحة) بوضوح في أعلى البطاقة.")
+```
