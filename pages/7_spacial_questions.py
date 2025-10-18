@@ -2,14 +2,18 @@
 """
 Streamlit page 7: Arabic visual IQ question generator (no API/JSON)
 - Paper folding & hole punching
-- 2D rotation (Cross-board & Diagonal/X-board)
+- 2D rotation (Cross-board & Diagonal/X-board) + “رموز متغيّرة”
 - 3D isometric cube rotation
 - Shape assembly (which set forms the target?)
-- NEW: “رموز متغيّرة” mode (extra glyphs: نجمة، نصف دائرة، مربّع صغير، شُكل L)
-- Difficulty tiers: سهل / متوسط / صعب (affects variety, jitter, distractors)
+- Difficulty tiers: سهل / متوسط / صعب
+
+Key UX fix: every question now shows a clear **reference stem** image at the top:
+- Left: المصدر/المجسّم أو اللوحة الأصلية
+- Center: سهم تدوير مع زاوية (أو سهم طيّ)
+- Right: صندوق تلميح شفاف (لا يكشف الحل) — فقط لبيان المطلوب
+Options تُعرض أسفلها دائمًا.
 
 File path: pages/7_spacial_questions.py
-Do NOT call st.set_page_config() here; Home.py manages it.
 """
 
 import io
@@ -21,7 +25,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageFont
 import streamlit as st
 
 # ------------------------------ Paths ------------------------------
@@ -99,11 +103,11 @@ def draw_circle(draw: ImageDraw.ImageDraw, center, r, fill=None, outline=(0, 0, 
 
 
 def draw_half_circle(draw: ImageDraw.ImageDraw, center, r, orientation: str = "up", outline=(0, 0, 0), width=3):
-    """Why: extra glyph for 'رموز متغيّرة' mode (visually distinct orientation)."""
     cx, cy = center
     bbox = [cx - r, cy - r, cx + r, cy + r]
-    start, end = {"up": 0, "right": 90, "down": 180, "left": 270}[orientation], {"up": 180, "right": 270, "down": 360, "left": 90}[orientation]
-    draw.pieslice(bbox, start=start, end=end, fill=None, outline=outline, width=width)
+    start_map = {"up": 0, "right": 90, "down": 180, "left": 270}
+    end_map = {"up": 180, "right": 270, "down": 360, "left": 90}
+    draw.pieslice(bbox, start=start_map[orientation], end=end_map[orientation], fill=None, outline=outline, width=width)
 
 
 def draw_triangle(draw: ImageDraw.ImageDraw, pts, fill=None, outline=(0, 0, 0), width=3):
@@ -125,7 +129,6 @@ def draw_diamond(draw: ImageDraw.ImageDraw, center, size, fill=None, outline=(0,
 
 
 def draw_star(draw: ImageDraw.ImageDraw, center, r, points=5, outline=(0, 0, 0), width=3):
-    """Classic star polygon."""
     cx, cy = center
     pts = []
     for i in range(points * 2):
@@ -136,13 +139,38 @@ def draw_star(draw: ImageDraw.ImageDraw, center, r, points=5, outline=(0, 0, 0),
 
 
 def draw_L(draw: ImageDraw.ImageDraw, center, size, outline=(0, 0, 0), width=6):
-    """Simple 'L' bar (directional)."""
     cx, cy = center
     s = size
-    # vertical
     draw.line((cx - s // 2, cy - s // 2, cx - s // 2, cy + s // 2), fill=outline, width=width)
-    # horizontal
     draw.line((cx - s // 2, cy + s // 2, cx + s // 2, cy + s // 2), fill=outline, width=width)
+
+
+def draw_rot_arrow(img: Image.Image, caption: str = "", bold: bool = False) -> Image.Image:
+    """Curved rotation arrow on transparent background with optional caption."""
+    w, h = 220, 220
+    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(canvas)
+    d.arc([30, 30, w - 30, h - 30], start=210, end=-30, fill=(0, 0, 0, 255), width=6 if bold else 4)
+    d.polygon([(w - 45, h // 2 - 10), (w - 85, h // 2 - 6), (w - 70, h // 2 - 28)], fill=(0, 0, 0, 255))
+    if caption:
+        try:
+            f = ImageFont.truetype("DejaVuSans.ttf", 20)
+        except Exception:
+            f = None
+        d.text((w // 2, h - 26), caption, fill=(0, 0, 0, 255), anchor="mm", font=f)
+    return canvas.convert("RGB")
+
+
+def faint_hint_box(side=220, text="؟") -> Image.Image:
+    img = new_canvas(side, side)
+    d = ImageDraw.Draw(img)
+    draw_square(d, (10, 10), side - 20, outline=(150, 150, 150), width=2)
+    try:
+        f = ImageFont.truetype("DejaVuSans.ttf", 72)
+    except Exception:
+        f = None
+    d.text((side // 2, side // 2), text, fill=(170, 170, 170), anchor="mm", font=f)
+    return img
 
 
 # ---------------------- Utilities ---------------------------------
@@ -157,6 +185,19 @@ def images_unique(imgs: List[Image.Image]) -> bool:
     return len(sigs) == len(set(sigs))
 
 
+def hstack(*imgs: Image.Image, pad: int = 16, bg=(255, 255, 255)) -> Image.Image:
+    """Horizontal stack with padding, vertically centered."""
+    H = max(im.height for im in imgs)
+    W = sum(im.width for im in imgs) + pad * (len(imgs) - 1)
+    out = Image.new("RGB", (W, H), bg)
+    x = 0
+    for im in imgs:
+        y = (H - im.height) // 2
+        out.paste(im, (x, y))
+        x += im.width + pad
+    return out
+
+
 @dataclass
 class Question:
     title: str
@@ -167,128 +208,89 @@ class Question:
 
 
 # ---------------------- Puzzle 1: Paper folding -------------------
-def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_shapes: bool = True, use_llm: bool = True) -> Question:
+def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
     RNG.seed(seed)
 
-    W, H = 900, 560
-    img = new_canvas(W, H)
-    draw = ImageDraw.Draw(img)
-
+    # Build stem parts
+    base_size = 220
+    folded = new_canvas(base_size, base_size)
+    d = ImageDraw.Draw(folded)
+    draw_square(d, (10, 10), base_size - 20)
     fold_dir = RNG.choice(["h", "v"])
-    base_size = 180
-    preview_x, preview_y = 60, 60
-
-    # Preview sheet + fold guide
+    # Fold guide
     if fold_dir == "h":
-        draw_square(draw, (preview_x, preview_y), base_size)
-        dashed_line(draw, (preview_x, preview_y + base_size), (preview_x + base_size, preview_y + base_size), width=2)
-        dashed_line(draw, (preview_x, preview_y + base_size), (preview_x, preview_y + base_size * 2), width=2)
-        dashed_line(draw, (preview_x + base_size, preview_y + base_size), (preview_x + base_size, preview_y + base_size * 2), width=2)
-        dashed_line(draw, (preview_x, preview_y + base_size * 2), (preview_x + base_size, preview_y + base_size * 2), width=2)
+        dashed_line(d, (10, base_size // 2), (base_size - 10, base_size // 2), width=3)
     else:
-        draw_square(draw, (preview_x + base_size // 2, preview_y), base_size)
-        dashed_line(draw, (preview_x, preview_y), (preview_x + base_size // 2, preview_y), width=2)
-        dashed_line(draw, (preview_x, preview_y), (preview_x, preview_y + base_size), width=2)
-        dashed_line(draw, (preview_x, preview_y + base_size), (preview_x + base_size // 2, preview_y + base_size), width=2)
-        dashed_line(draw, (preview_x + base_size // 2, preview_y), (preview_x + base_size // 2, preview_y + base_size), width=2)
+        dashed_line(d, (base_size // 2, 10), (base_size // 2, base_size - 10), width=3)
 
-    # Random 1–3 circular holes
-    n_by_level = {"سهل": (1, 2), "متوسط": (2, 3), "صعب": (3, 3)}
+    # Random holes
+    n_by_level = {"سهل": (1, 2), "متوسط": (2, 3), "صعب": (3, 4)}
     lo, hi = n_by_level.get(difficulty, (1, 2))
-    n_marks = RNG.randint(lo, hi)
-    marks: List[Tuple[str, Tuple[int, int]]] = []
-    for _ in range(n_marks):
-        rx = RNG.randint(22, base_size - 22)
-        ry = RNG.randint(22, base_size - 22)
-        marks.append(("circle", (preview_x + rx + (0 if fold_dir == "h" else base_size // 2), preview_y + ry)))
+    holes = RNG.randint(lo, hi)
+    pts = []
+    for _ in range(holes):
+        x = RNG.randint(40, base_size - 40)
+        y = RNG.randint(40, base_size - 40)
+        if fold_dir == "h" and y > base_size // 2:
+            y = base_size - y
+        if fold_dir == "v" and x < base_size // 2:
+            x = base_size - x
+        pts.append((x, y))
+    for (x, y) in pts:
+        draw_circle(d, (x, y), 12, outline=(0, 0, 0), width=4)
 
-    for _, (cx, cy) in marks:
-        draw_circle(draw, (cx, cy), 12, outline=(0, 0, 0), width=4)
+    # Stem: folded sheet + arrow + hint
+    stem = hstack(folded, draw_rot_arrow(caption="افتح"), faint_hint_box())
 
-    # Fold arrow
-    ax = preview_x + base_size + 120
-    ay = preview_y + base_size // 2
-    draw.arc([ax - 60, ay - 60, ax + 60, ay + 60], start=180, end=0, fill=(0, 0, 0), width=4)
-    draw.polygon([(ax + 60, ay), (ax + 25, ay - 15), (ax + 25, ay + 15)], fill=(0, 0, 0))
-
-    def mirror(point):
-        x, y = point
+    # Unfold logic
+    def mirror(p):
+        x, y = p
         if fold_dir == "h":
-            dy = y - preview_y
-            return (x, preview_y + base_size - dy)
-        else:
-            dx = x - (preview_x + base_size // 2)
-            return (preview_x + base_size - dx, y)
+            return (x, base_size - y)
+        return (base_size - x, y)
 
-    def render_unfolded(mark_positions: List[Tuple[str, Tuple[int, int]]], wrong_variant: Optional[int] = None) -> Image.Image:
-        S = 220
-        pad = 10
-        img_opt = new_canvas(S + pad * 2, S + pad * 2)
-        d = ImageDraw.Draw(img_opt)
-        draw_square(d, (pad, pad), S)
+    def render_unfolded(correct=True, jitter=0):
+        S = base_size
+        img = new_canvas(S, S)
+        dd = ImageDraw.Draw(img)
+        draw_square(dd, (10, 10), S - 20)
+        # original holes
+        for (x, y) in pts:
+            draw_circle(dd, (x, y), 12, outline=(0, 0, 0), width=4)
+        # mirrored holes (or wrong variants)
+        for (x, y) in pts:
+            mx, my = mirror((x, y))
+            if not correct and jitter:
+                # displace to fake reflection
+                mx += RNG.choice([-jitter, jitter])
+                my += RNG.choice([-jitter, jitter])
+            draw_circle(dd, (mx, my), 12, outline=(0, 0, 0), width=4)
+        return img
 
-        def map_point(px, py):
-            if fold_dir == "h":
-                offx = px - preview_x
-                offy = py - preview_y
-            else:
-                offx = px - (preview_x + base_size // 2)
-                offy = py - preview_y
-            nx = pad + int(offx * (S / base_size))
-            ny = pad + int(offy * (S / base_size))
-            return nx, ny
+    correct_img = render_unfolded(correct=True)
+    wrong1 = render_unfolded(correct=False, jitter=16 if difficulty != "سهل" else 10)
+    wrong2 = ImageOps.mirror(correct_img) if fold_dir == "h" else ImageOps.flip(correct_img)
+    wrong3 = new_canvas(correct_img.width, correct_img.height)  # missing mirrors
+    d3 = ImageDraw.Draw(wrong3)
+    draw_square(d3, (10, 10), base_size - 20)
+    for (x, y) in pts:
+        draw_circle(d3, (x, y), 12, outline=(0, 0, 0), width=4)
 
-        pts = [("circle", map_point(cx, cy)) for _, (cx, cy) in mark_positions]
-        if wrong_variant is None:
-            for _, (cx, cy) in mark_positions:
-                mx, my = mirror((cx, cy))
-                pts.append(("circle", map_point(mx, my)))
-        elif wrong_variant == 1:
-            spread = 12 if difficulty != "صعب" else 16
-            for _, (cx, cy) in mark_positions:
-                if fold_dir == "h":
-                    mx, my = (cx + (spread if cx < preview_x + base_size / 2 else -spread), cy)
-                else:
-                    mx, my = (cx, cy + (spread if cy < preview_y + base_size / 2 else -spread))
-                pts.append(("circle", map_point(mx, my)))
-        elif wrong_variant == 2:
-            for _, (cx, cy) in mark_positions:
-                pts.append(("circle", map_point(cx, cy)))
-
-        for _, (x, y) in pts:
-            draw_circle(d, (x, y), 12, outline=(0, 0, 0), width=4)
-        return img_opt
-
-    correct = render_unfolded(marks, wrong_variant=None)
-    wrongs = [render_unfolded(marks, wrong_variant=i) for i in (0, 1, 2)]
-
-    options = [correct] + wrongs
-    tries = 0
-    while not images_unique(options) and tries < 6:
-        wrongs = [render_unfolded(marks, wrong_variant=i) for i in (0, 1, 2)]
-        options = [correct] + wrongs
-        tries += 1
-
+    options = [correct_img, wrong1, wrong2, wrong3]
     RNG.shuffle(options)
-    correct_index = options.index(correct)
+    correct_index = options.index(correct_img)
 
-    sys = "أنت مساعد تعليمي يكتب تعليمات قصيرة وواضحة بالعربية."
+    sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
-        sys,
-        "بعد فتح الورقة، أي بديل يطابق نمط الثقوب الصحيح؟ اختر الإجابة.",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=st.session_state.get("use_llm", True),
+        sys, "بعد فتح الورقة وفق خط الطيّ، أيُّ بديل يطابق نمط الثقوب الصحيح؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True)
     )
     expl = ollama_chat_or_fallback(
-        sys,
-        "الصحيح الوحيد يُظهر انعكاس الثقوب حول خط الطيّ (تماثل مرآتي).",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=st.session_state.get("use_llm", True),
+        sys, "الصحيح يُظهر انعكاسًا تامًا حول خط الطيّ مع بقاء مواقع الثقوب الأصلية.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True)
     )
-    return Question(title=title, image=img, options=options, correct_index=correct_index, explanation=expl)
+    return Question(title=title, image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 
-# ---------------------- Glyph pools (NEW “رموز متغيّرة”) ----------
+# ---------------------- Glyph pools (“رموز متغيّرة”) --------------
 def glyph_pool(variable_mode: bool, difficulty: str):
     base = ["plus", "diamond", "circle", "triangle"]
     extra = ["star", "half_up", "half_right", "square_small", "L"]
@@ -327,142 +329,98 @@ def draw_glyph(draw: ImageDraw.ImageDraw, glyph: str, center: Tuple[int, int], s
         draw_L(draw, center, size, outline=(0, 0, 0), width=6)
 
 
-# ---------------------- Puzzle 2a: Quadrant rotation ---------------
-def random_quadrant_board(canvas_size=280, seed=0, variable_mode: bool = True, difficulty: str = "سهل") -> Image.Image:
+# ---------------------- Boards & stems (2D) ------------------------
+def board_cross(canvas_size=260, seed=0, variable_mode: bool = True, difficulty: str = "سهل") -> Image.Image:
     RNG.seed(seed)
     img = new_canvas(canvas_size, canvas_size)
     d = ImageDraw.Draw(img)
-
-    # Board + cross
     draw_square(d, (10, 10), canvas_size - 20)
     mid = canvas_size // 2
     d.line((10, mid, canvas_size - 10, mid), fill=(0, 0, 0), width=3)
     d.line((mid, 10, mid, canvas_size - 10), fill=(0, 0, 0), width=3)
 
-    # Pool and placements
     pool = glyph_pool(variable_mode, difficulty)
     RNG.shuffle(pool)
     chosen = pool[:4]
 
     jitter = {"سهل": 6, "متوسط": 10, "صعب": 16}[difficulty]
-    base_offs = 64 if difficulty != "صعب" else 58
-    offs = [(mid - base_offs, mid - base_offs), (mid + base_offs, mid - base_offs),
-            (mid - base_offs, mid + base_offs), (mid + base_offs, mid + base_offs)]
+    offset = 60 if difficulty != "صعب" else 56
+    locs = [(mid - offset, mid - offset), (mid + offset, mid - offset), (mid - offset, mid + offset), (mid + offset, mid + offset)]
 
-    for glyph, (cx, cy) in zip(chosen, offs):
-        jx = RNG.randint(-jitter, jitter)
-        jy = RNG.randint(-jitter, jitter)
-        draw_glyph(d, glyph, (cx + jx, cy + jy), size=42)
-
+    for glyph, (cx, cy) in zip(chosen, locs):
+        draw_glyph(ImageDraw.Draw(img), glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), size=40)
     return img
+
+
+def board_diag(canvas_size=260, seed=0, variable_mode: bool = True, difficulty: str = "سهل") -> Image.Image:
+    RNG.seed(seed)
+    img = new_canvas(canvas_size, canvas_size)
+    d = ImageDraw.Draw(img)
+    draw_square(d, (10, 10), canvas_size - 20)
+    d.line((10, 10, canvas_size - 10, canvas_size - 10), fill=(0, 0, 0), width=3)
+    d.line((10, canvas_size - 10, canvas_size - 10, 10), fill=(0, 0, 0), width=3)
+    pool = glyph_pool(variable_mode, difficulty)
+    RNG.shuffle(pool)
+    chosen = pool[:3]
+    mid = canvas_size // 2
+    base = 65 if difficulty != "صعب" else 60
+    jitter = {"سهل": 6, "متوسط": 10, "صعب": 14}[difficulty]
+    slots = [(mid - base, mid - base), (mid + base, mid - base), (mid - base, mid + base)]
+    for glyph, (cx, cy) in zip(chosen, slots):
+        draw_glyph(d, glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), 40)
+    return img
+
+
+def stem_with_rotation(source_img: Image.Image, angle: int) -> Image.Image:
+    return hstack(source_img, draw_rot_arrow(caption=f"{angle}°"), faint_hint_box())
 
 
 def rotate_image(img: Image.Image, angle_deg: int, allow_mirror=False) -> Image.Image:
     out = img.rotate(angle_deg, expand=True, fillcolor=(255, 255, 255))
-    if allow_mirror and RNG.random() < 0.3:
+    if allow_mirror and RNG.random() < 0.25:
         out = ImageOps.mirror(out)
     return out
 
 
 def quadrant_rotation_question(seed: int = 0, difficulty: str = "سهل", variable_mode: bool = True, use_llm: bool = True) -> Question:
-    base = random_quadrant_board(canvas_size=280, seed=seed, variable_mode=variable_mode, difficulty=difficulty)
+    base = board_cross(canvas_size=260, seed=seed, variable_mode=variable_mode, difficulty=difficulty)
     angle = RNG.choice([90, 180, 270])
+    stem = stem_with_rotation(base, angle)
 
     correct = rotate_image(base, -angle, allow_mirror=False)
-    # Distractors tuned by difficulty
     if difficulty == "سهل":
-        distract = [
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.mirror(base),
-        ]
+        distract = [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)] + [ImageOps.mirror(base)]
     elif difficulty == "متوسط":
-        distract = [
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.flip(rotate_image(base, -angle)),  # mirrored after correct rotation
-            ImageOps.mirror(base),
-        ]
-    else:  # صعب
-        distract = [
-            ImageOps.mirror(rotate_image(base, -angle)),  # mirror+rotate (very deceptive)
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.flip(base),
-        ]
+        distract = [ImageOps.flip(rotate_image(base, -angle))] + [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)]
+    else:
+        distract = [ImageOps.mirror(rotate_image(base, -angle)), rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])), ImageOps.flip(base)]
 
     options = [correct] + distract
-    tries = 0
-    while not images_unique(options) and tries < 4:
-        RNG.shuffle(distract)
-        options = [correct] + distract
-        tries += 1
-
     RNG.shuffle(options)
     correct_index = options.index(correct)
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
-        sys,
-        f"بعد تدوير اللوحة بمقدار {angle}°، أي بديل يطابق الصورة؟",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, f"انظر إلى اللوحة على اليسار. أيُّ بديل يطابقها بعد تدويرها {angle}°؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
     expl = ollama_chat_or_fallback(
-        sys,
-        "الصحيح يحافظ على ترتيب الرموز بالنسبة للمحاور بعد الدوران دون أي انعكاس.",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, "الصحيح يحافظ على ترتيب الرموز بالنسبة للمحاور بعد الدوران دون أي انعكاس.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
-    return Question(title=title, image=base, options=options, correct_index=correct_index, explanation=expl)
-
-
-# ---------------------- Puzzle 2b: Diagonal (X-board) rotation ----
-def diagonal_board(canvas_size=280, seed=0, variable_mode: bool = True, difficulty: str = "سهل") -> Image.Image:
-    RNG.seed(seed)
-    img = new_canvas(canvas_size, canvas_size)
-    d = ImageDraw.Draw(img)
-
-    draw_square(d, (10, 10), canvas_size - 20)
-    # diagonals
-    d.line((10, 10, canvas_size - 10, canvas_size - 10), fill=(0, 0, 0), width=3)
-    d.line((10, canvas_size - 10, canvas_size - 10, 10), fill=(0, 0, 0), width=3)
-
-    pool = glyph_pool(variable_mode, difficulty)
-    RNG.shuffle(pool)
-    chosen = pool[:3]
-
-    mid = canvas_size // 2
-    base = 70 if difficulty != "صعب" else 65
-    jitter = {"سهل": 6, "متوسط": 10, "صعب": 14}[difficulty]
-    slots = [(mid - base, mid - base), (mid + base, mid - base), (mid - base, mid + base)]
-    for glyph, (cx, cy) in zip(chosen, slots):
-        draw_glyph(d, glyph, (cx + RNG.randint(-jitter, jitter), cy + RNG.randint(-jitter, jitter)), 42)
-
-    return img
+    return Question(title=title, image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 
 def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True, difficulty: str = "سهل", use_llm: bool = True) -> Question:
-    base = diagonal_board(280, seed, variable_mode, difficulty)
+    base = board_diag(canvas_size=260, seed=seed, variable_mode=variable_mode, difficulty=difficulty)
     angle = RNG.choice([90, 180, 270])
+    stem = stem_with_rotation(base, angle)
 
     correct = rotate_image(base, -angle)
     if difficulty == "سهل":
-        distract = [
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.mirror(base),
-        ]
+        distract = [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)] + [ImageOps.mirror(base)]
     elif difficulty == "متوسط":
-        distract = [
-            ImageOps.flip(rotate_image(base, -angle)),
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.mirror(base),
-        ]
+        distract = [ImageOps.flip(rotate_image(base, -angle))] + [rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])) for _ in range(2)]
     else:
-        distract = [
-            ImageOps.mirror(rotate_image(base, -angle)),
-            rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])),
-            ImageOps.flip(base),
-        ]
+        distract = [ImageOps.mirror(rotate_image(base, -angle)), rotate_image(base, -RNG.choice([a for a in [90, 180, 270] if a != angle])), ImageOps.flip(base)]
 
     options = [correct] + distract
     RNG.shuffle(options)
@@ -470,21 +428,15 @@ def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True, diffic
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
-        sys,
-        f"لوحة مقسّمة بالأقطار. بعد تدويرها {angle}°، أي بديل صحيح؟",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, f"لوحة مقسّمة بالأقطار. أيُّ بديل يطابقها بعد تدويرها {angle}°؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
     expl = ollama_chat_or_fallback(
-        sys,
-        "تحقق من مواقع الرموز على القطرين؛ الإجابة الصحيحة فقط تماثل الدوران المطلوب.",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, "تحقق من مواقع الرموز على القطرين؛ الصحيح فقط يوافق دوران الزاوية المطلوبة.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
-    return Question(title=title, image=base, options=options, correct_index=correct_index, explanation=expl)
+    return Question(title=title, image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 
-# ---------------------- Puzzle 3: 3D isometric cube rotation ------
+# ---------------------- 3D isometric cube rotation ----------------
 def orientation_matrices() -> List[np.ndarray]:
     mats = []
     axes = [
@@ -516,7 +468,7 @@ def iso_project(pt: Tuple[int, int, int], scale=28) -> Tuple[float, float]:
     return u, v
 
 
-def draw_iso_cubes(coords: List[Tuple[int, int, int]], size=28, img_size=(320, 280)) -> Image.Image:
+def draw_iso_cubes(coords: List[Tuple[int, int, int]], size=28, img_size=(260, 240)) -> Image.Image:
     img = new_canvas(*img_size)
     d = ImageDraw.Draw(img)
     us = [iso_project(p, size) for p in coords]
@@ -526,7 +478,7 @@ def draw_iso_cubes(coords: List[Tuple[int, int, int]], size=28, img_size=(320, 2
     maxy = max(v for _, v in us)
     cx = (img_size[0] - (maxx - minx)) / 2 - minx
     cy = (img_size[1] - (maxy - miny)) / 2 - miny
-    order = sorted(range(len(coords)), key=lambda i: sum(coords[i]))  # back-to-front
+    order = sorted(range(len(coords)), key=lambda i: sum(coords[i]))
     for i in order:
         x, y, z = coords[i]
         u, v = iso_project((x, y, z), size)
@@ -571,86 +523,81 @@ def cubes_rotation_question(seed: int = 0, difficulty: str = "سهل", use_llm: 
     RNG.seed(seed)
     n = {"سهل": 4, "متوسط": 5, "صعب": 6}[difficulty]
     shape = random_polycube(n=n, seed=seed)
+
+    # Stem: show the original 3D model ONLY (no giveaway) + rotation arrow + hint box
+    src_img = draw_iso_cubes(shape, img_size=(260, 240))
+    angle_txt = RNG.choice(["90°", "180°", "270°"])  # just a cue; actual rotations are in options via matrices
+    stem = hstack(src_img, draw_rot_arrow(caption=f"دوِّر {angle_txt}", bold=True), faint_hint_box())
+
+    # Correct orientation (random matrix)
     R_true = RNG.choice(ORIENTS)
     correct_coords = apply_rot(shape, R_true)
-    top_img = draw_iso_cubes(shape, img_size=(320, 280))
-    ref_img = draw_iso_cubes(correct_coords, img_size=(320, 280))
+    correct_img = draw_iso_cubes(correct_coords, img_size=(240, 220))
 
-    W, H = 900, 360
-    stmt = new_canvas(W, H)
-    d = ImageDraw.Draw(stmt)
-    stmt.paste(top_img, (60, 40))
-    stmt.paste(ref_img, (W - 60 - ref_img.width, 40))
-    ax, ay = W // 2, H // 2
-    d.arc([ax - 80, ay - 60, ax + 80, ay + 60], start=210, end=-30, fill=(0, 0, 0), width=5)
-    d.polygon([(ax + 75, ay - 20), (ax + 30, ay - 10), (ax + 40, ay - 40)], fill=(0, 0, 0))
-
-    opts: List[Image.Image] = []
-    correct_img = draw_iso_cubes(correct_coords, img_size=(300, 260))
-    opts.append(correct_img)
+    # Distractors: different valid orientations (not equal to correct)
     used = {tuple(map(int, np.rint(R_true).flatten()))}
-    while len(opts) < 4:
+    options: List[Image.Image] = [correct_img]
+    while len(options) < 4:
         R_alt = RNG.choice(ORIENTS)
         key = tuple(map(int, np.rint(R_alt).flatten()))
         if key in used:
             continue
         used.add(key)
-        coords = apply_rot(shape, R_alt)
-        opts.append(draw_iso_cubes(coords, img_size=(300, 260)))
+        options.append(draw_iso_cubes(apply_rot(shape, R_alt), img_size=(240, 220)))
 
-    RNG.shuffle(opts)
-    correct_index = opts.index(correct_img)
+    RNG.shuffle(options)
+    correct_index = options.index(correct_img)
 
     sys = "أنت مساعد تعليمي بالعربية."
     title = ollama_chat_or_fallback(
-        sys,
-        "انظر إلى المجسّم على اليسار. أيُّ بديل في الأسفل يطابقه بعد تدويره كما في السهم؟",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, "انظر إلى المجسّم على اليسار. أيُّ بديل يطابقه بعد تدويره كما في السهم؟", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
     expl = ollama_chat_or_fallback(
-        sys,
-        "نطابق مواقع المكعّبات بعد الدوران فقط (بلا انعكاس/تبديل).",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=use_llm,
+        sys, "طابِق هيئة المكعّبات بعد التدوير فقط (لا انعكاس). البديل الصحيح يُحافظ على نفس الشكل من زاوية أخرى.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm
     )
-    return Question(title=title, image=stmt, options=opts, correct_index=correct_index, explanation=expl)
+    return Question(title=title, image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 
-# ---------------------- Puzzle 4: Shape assembly -------------------
+# ---------------------- Shape assembly -----------------------------
 def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
     RNG.seed(seed)
     target = RNG.choice(["square", "pentagon"])
 
-    W, H = 900, 380
-    img = new_canvas(W, H)
-    d = ImageDraw.Draw(img)
+    # Stem target (right) + hint
+    if target == "square":
+        tgt = new_canvas(240, 240)
+        draw_square(ImageDraw.Draw(tgt), (20, 20), 200)
+    else:
+        tgt = new_canvas(240, 240)
+        d = ImageDraw.Draw(tgt)
+        cx, cy, r = 120, 120, 95
+        pts = [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(-math.pi / 2, 1.5 * math.pi, 6)[:-1]]
+        d.polygon(pts, outline=(0, 0, 0), fill=None)
+    stem = hstack(faint_hint_box(text="ركّب"), draw_rot_arrow(caption=""), tgt)
+
+    # Options (groups of pieces)
+    def tri_img(angle=0, flip=False):
+        S = 120
+        pad = 8
+        im = new_canvas(S + pad * 2, S + pad * 2)
+        dr = ImageDraw.Draw(im)
+        pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + 10, pad + S - 10)]
+        if flip:
+            pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + S - 10, pad + S - 10)]
+        draw_triangle(dr, pts, outline=(0, 0, 0))
+        return im.rotate(angle, expand=True, fillcolor=(255, 255, 255))
+
+    def panel(imgs: List[Image.Image]) -> Image.Image:
+        w = sum(i.width for i in imgs) + 20 * (len(imgs) - 1) + 40
+        h = max(i.height for i in imgs) + 40
+        out = new_canvas(w, h)
+        x = 20
+        for im in imgs:
+            out.paste(im, (x, (h - im.height) // 2))
+            x += im.width + 20
+        return out
 
     if target == "square":
-        draw_square(d, (W - 300, 80), 180)
-        title_hint = "أي مجموعة من القطع يمكن أن تُكوِّن مربعًا كهذا؟"
-
-        def tri_img(angle=0, flip=False):
-            S = 140
-            pad = 10
-            im = new_canvas(S + pad * 2, S + pad * 2)
-            dr = ImageDraw.Draw(im)
-            pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + 10, pad + S - 10)]
-            if flip:
-                pts = [(pad + 10, pad + 10), (pad + S - 10, pad + 10), (pad + S - 10, pad + S - 10)]
-            draw_triangle(dr, pts, outline=(0, 0, 0))
-            return im.rotate(angle, expand=True, fillcolor=(255, 255, 255))
-
-        def panel(imgs: List[Image.Image]) -> Image.Image:
-            w = sum(i.width for i in imgs) + 20 * (len(imgs) - 1) + 40
-            h = max(i.height for i in imgs) + 40
-            out = new_canvas(w, h)
-            x = 20
-            for im in imgs:
-                out.paste(im, (x, (h - im.height) // 2))
-                x += im.width + 20
-            return out
-
         optA = panel([tri_img(), tri_img(angle=180, flip=True)])  # correct
         rect = new_canvas(100, 140)
         ImageDraw.Draw(rect).rectangle([10, 10, 90, 130], outline=(0, 0, 0), width=3)
@@ -662,54 +609,27 @@ def shape_assembly_question(seed: int = 0, use_llm: bool = True) -> Question:
         options = [optA, optB, optC, optD]
         correct_index = 0
     else:
-        cx, cy, r = W - 210, 170, 110
-        pts = [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(-math.pi / 2, 1.5 * math.pi, 6)[:-1]]
-        d.polygon(pts, outline=(0, 0, 0), fill=None)
-        title_hint = "أي مجموعة من القطع يمكن أن تُكوِّن خماسي الأضلاع؟"
-
-        def quad_panel(lean=1) -> Image.Image:
-            im = new_canvas(160, 140)
-            dr = ImageDraw.Draw(im)
-            p = [(20, 120), (80, 20), (140, 60), (100, 120)]
-            if lean < 0:
-                p = [(20, 60), (60, 20), (140, 80), (100, 120)]
-            dr.polygon(p, outline=(0, 0, 0), fill=None)
-            return im
-
-        def panel(imgs: List[Image.Image]) -> Image.Image:
-            w = sum(i.width for i in imgs) + 20 * (len(imgs) - 1) + 40
-            h = max(i.height for i in imgs) + 40
-            out = new_canvas(w, h)
-            x = 20
-            for im in imgs:
-                out.paste(im, (x, (h - im.height) // 2))
-                x += im.width + 20
-            return out
-
-        optA = quad_panel(1)
-        optB = quad_panel(-1)
-        optC = new_canvas(160, 140)
-        ImageDraw.Draw(optC).ellipse([30, 30, 130, 110], outline=(0, 0, 0), width=3)
-        optD = new_canvas(160, 140)
-        draw_triangle(ImageDraw.Draw(optD), [(20, 120), (80, 20), (140, 120)], outline=(0, 0, 0))
-        options = [panel([optA, optB]), panel([optA, optC]), panel([optB, optD]), panel([optC, optD])]
+        quad = new_canvas(160, 140)
+        ImageDraw.Draw(quad).polygon([(20, 120), (80, 20), (140, 60), (100, 120)], outline=(0, 0, 0), fill=None)
+        quad2 = new_canvas(160, 140)
+        ImageDraw.Draw(quad2).polygon([(20, 60), (60, 20), (140, 80), (100, 120)], outline=(0, 0, 0), fill=None)
+        circ = new_canvas(160, 140)
+        ImageDraw.Draw(circ).ellipse([30, 30, 130, 110], outline=(0, 0, 0), width=3)
+        tri = new_canvas(160, 140)
+        draw_triangle(ImageDraw.Draw(tri), [(20, 120), (80, 20), (140, 120)], outline=(0, 0, 0))
+        options = [panel([quad, quad2]), panel([quad, circ]), panel([quad2, tri]), panel([circ, tri])]
         correct_index = 0
 
-    d.text((60, 40), "السؤال:", fill=(0, 0, 0))
-
     sys = "أنت مساعد تعليمي بالعربية."
+    title_hint = "أي مجموعة من القطع يمكن أن تُكوِّن الشكل المطلوب؟"
     title = ollama_chat_or_fallback(sys, title_hint, model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True))
     expl = ollama_chat_or_fallback(
-        sys,
-        "نقارن مساحات القطع واتجاه الحواف؛ المجموعة الصحيحة يمكن ترتيبها لتكمل حدود الشكل دون فجوات.",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"),
-        enabled=st.session_state.get("use_llm", True),
+        sys, "نقارن الحواف والزوايا والمساحات؛ المجموعة الصحيحة يمكن ترتيبها لتكمل حدود الشكل دون فجوات.", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=st.session_state.get("use_llm", True)
     )
-    return Question(title=title, image=img, options=options, correct_index=correct_index, explanation=expl)
+    return Question(title=title, image=stem, options=options, correct_index=correct_index, explanation=expl)
 
 
 # ---------------------- Streamlit Page 7 (UI/UX) -------------------
-# Sidebar
 if LOGO_PATH.exists():
     st.sidebar.image(str(LOGO_PATH))
 st.sidebar.markdown("### الإعدادات")
@@ -738,12 +658,11 @@ puzzle_types = st.sidebar.multiselect(
     default=["طيّ الورق", "تدوير رباعي", "تدوير قطري", "تدوير مكعّبات ثلاثي", "تركيب شكل"],
 )
 
-# Action bar
 col1, col2 = st.columns([1, 1])
 with col1:
     gen = st.button("🚀 إنشاء الأسئلة", use_container_width=True)
 with col2:
-    st.caption("كل سؤال يُنشأ عشوائيًا بمشتتات مدروسة. فعّل **رموز متغيّرة** لزيادة التنوع.")
+    st.caption("كل سؤال يُظهر **المجسّم/اللوحة المرجعية** في الأعلى بوضوح، ثم البدائل بالأسفل.")
 
 st.title("مولّد أسئلة ذكاء مرئية")
 st.write("مطابق لنمط الأمثلة المرفقة. كل تشغيل يعطي **أسئلة مختلفة** بفضل العشوائية المضبوطة بالبذرة.")
@@ -776,7 +695,7 @@ if gen:
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for idx, kind in enumerate(order, 1):
-            # vary seeds strongly to ensure different results every time
+            # strong variation
             qseed = seed_base ^ (RNG.randint(1, 1_000_000_007) + idx * 9973)
             q = build_by_type(kind, seed=qseed)
             generated.append(q)
@@ -793,7 +712,6 @@ if gen:
                         unsafe_allow_html=True,
                     )
 
-            # ZIP & answers
             zf.writestr(f"q{idx}_statement.png", bytes_from_img(q.image))
             for i, c in enumerate(opts, start=1):
                 zf.writestr(f"q{idx}_opt_{i}.png", bytes_from_img(c))
@@ -813,4 +731,4 @@ if gen:
         use_container_width=True,
     )
 else:
-    st.info("اضغط **إنشاء الأسئلة** لبدء التوليد. غيّر البذرة أو فعّل **رموز متغيّرة** لمزيد من التنوع.")
+    st.info("اضغط **إنشاء الأسئلة** لبدء التوليد. كل سؤال يعرض المرجع (المجسّم/اللوحة) بوضوح في أعلى البطاقة.")
