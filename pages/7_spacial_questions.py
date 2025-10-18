@@ -74,4 +74,3 @@ if selected is not None:
         st.success("إجابة صحيحة!")
     else:
         st.error("خطأ! جرب مرة أخرى.")
-
