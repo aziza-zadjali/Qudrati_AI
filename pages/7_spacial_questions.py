@@ -422,67 +422,72 @@ def diagonal_rotation_question(seed: int = 0, variable_mode: bool = True,
                    correct_index=correct_index, explanation=expl)
 
 def paper_fold_question(seed: int = 0, difficulty: str = "سهل", use_llm: bool = True) -> Question:
-    # Focus: Choices & stem layout mimic your attached example exactly
     RNG.seed(seed)
-    base_size = 210
-    folded = new_canvas(base_size*2, base_size)
+    # Setup dimensions
+    W, H = 160, 200      # Rectangle and grid size
+    MARGIN = 16
+    HOLE_RADIUS = 13
+    # -- Step 1. Draw folded rectangle, fold line, and hole location --
+    folded = Image.new("RGB", (W, H), "white")
     d = ImageDraw.Draw(folded)
-    
-    # Draw rectangle
-    draw_square(d, (5,5), base_size*2 - 10)
+    # Main rectangle
+    d.rectangle([MARGIN, MARGIN, W - MARGIN, H - MARGIN], outline="black", width=4)
+    # Fold line center (horizontal)
+    yfold = (H + MARGIN) // 2
+    # Dashed line
+    dashlen, gap = 7, 7
+    for x in range(MARGIN+7, W - MARGIN, dashlen + gap):
+        d.line([(x, yfold), (min(x + dashlen, W - MARGIN), yfold)], fill="black", width=2)
+    # Draw one hole on upper right panel (user can randomize location)
+    hole_x = W - MARGIN - 23
+    hole_y = yfold - 36
+    d.ellipse((hole_x - HOLE_RADIUS, hole_y - HOLE_RADIUS, hole_x + HOLE_RADIUS, hole_y + HOLE_RADIUS), outline="black", width=3)
+    # -- Step 2. Stem: rectangle + pro arrow outside (not on image) --
+    stem_img = folded
 
-    # Draw fold line (vertical or horizontal—here, horizontal as in your sample)
-    fold_dir = "h"
-    d.line((5, base_size//2, base_size*2-5, base_size//2), fill=(0,0,0), width=STYLE["grid"])
-    # Dashed vertical marks (showing where folding occurs)
-    dashed_line(d, (base_size,5), (base_size,base_size-5), dash_len=8, gap_len=6)
+    # -- Step 3. Answer options images; always 4, with various placements --
+    def ans_img(holes: List[Tuple[int, int]]) -> Image.Image:
+        ans = Image.new("RGB", (W, H), "white")
+        d2 = ImageDraw.Draw(ans)
+        d2.rectangle([MARGIN, MARGIN, W - MARGIN, H - MARGIN], outline="black", width=4)
+        for (hx, hy) in holes:
+            d2.ellipse((hx-HOLE_RADIUS, hy-HOLE_RADIUS, hx+HOLE_RADIUS, hy+HOLE_RADIUS), outline="black", width=3)
+        return ans
 
-    # Arrow indicating fold (top half folds down)
-    arrow = draw_banner_arrow("[translate:إعادة فتح الورقة]", direction="right")
+    # Hole reflection logic after fold: symmetry over fold line (horizontal)
+    hole2_x, hole2_y = hole_x, 2*yfold - hole_y
+    correct = ans_img([(hole_x, hole_y), (hole2_x, hole2_y)])
+    wrong1 = ans_img([(hole_x, hole_y)])                             # Only top hole
+    wrong2 = ans_img([(hole2_x, hole2_y)])                           # Only bottom hole
+    wrong3 = ans_img([(hole_x-30, hole_y), (hole2_x-30, hole2_y)])   # Shifted holes
 
-    # Place one or two holes (as seen in your sample: upper right)
-    holes_pts = [(base_size+base_size//2, base_size//4)]
-    for (x, y) in holes_pts:
-        draw_circle(d, (x, y), 15)
-    
-    # Compose stem image: folded rectangle + arrow
-    stem = hstack(_finalize_for_display(folded, (260,140)), arrow, faint_hint_box(70, text="[translate:؟]"))
-    
-    # Render correct unfolded (two holes: one original, one mirrored)
-    def render_unfolded(pts, fold="h"):
-        img = new_canvas(base_size*2, base_size)
-        dr = ImageDraw.Draw(img)
-        draw_square(dr, (5,5), base_size*2 - 10)
-        for (x,y) in pts:
-            draw_circle(dr, (x, y), 15)
-            # Mirror the hole vertically (as in example)
-            dr_y = base_size - y if fold == "h" else y
-            dr_x = x if fold == "h" else base_size*2 - x
-            draw_circle(dr, (dr_x, dr_y), 15)
-        return _finalize_for_display(img, (120,120))
-    
-    # Correct answer: one in top right, one in bottom right
-    opt_a = render_unfolded(holes_pts)
-    # Distractor: holes both top, both bottom, or swapped
-    opt_b = render_unfolded([(base_size//2, base_size//4)]) # left
-    opt_c = render_unfolded([(base_size+base_size//2, 3*base_size//4)]) # right bottom
-    opt_d = render_unfolded([(base_size//2, 3*base_size//4)]) # left bottom
-    options = [opt_a, opt_b, opt_c, opt_d]
-    correct_index = 0
+    opts = [correct, wrong1, wrong2, wrong3]
+    labels = list(range(len(opts)))
+    RNG.shuffle(labels)
+    final_opts = [opts[i] for i in labels]
+    correct_index = labels.index(0) # 'correct' is always at position 0 in opts
 
-    sys = "[translate:أنت مساعد تعليمي بالعربية.]"
-    title = ollama_chat(sys,
-        "[translate:انظر إلى المثال وحدد الإجابة حسب التعليمات. ما رمز البديل الذي يحتوي على صورة المطابقة بعد إعادة فتح الورقة؟]",
-        model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
-    expl = ollama_chat(sys,"[translate:الصحيح يُظهر كل الثقوب بعد الطي (أصلي + منعكس للأسفل).]",model=st.session_state.get("llm_model", "qwen2.5:3b"),enabled=use_llm)
+    # -- Step 4. Professional answer panel images (with _finalize_for_display) --
+    ans_imgs = [_finalize_for_display(o, (120, 150)) for o in final_opts]
+
+    # -- Step 5. Stem: concat with big arrow (outside image), faint q mark
+    arrow_img = draw_banner_arrow("إعادة فتح الورقة", direction="right")
+    qmark_img = faint_hint_box(70, text="؟")
+    stem = hstack(_finalize_for_display(stem_img, (120, 150)), arrow_img, qmark_img, pad=32)
+
+    sys = "أنت مساعد تعليمي بالعربية."
+    title = ollama_chat(sys, "انظر إلى المثال وحدد الإجابة حسب التعليمات. ما رمز البديل الذي يحتوي على صورة المطابقة بعد إعادة فتح الورقة؟",
+                        model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
+    expl = ollama_chat(sys, "الصحيح يُظهر كل الثقوب بعد الطي (أصلي + منعكس للأسفل).", model=st.session_state.get("llm_model", "qwen2.5:3b"), enabled=use_llm)
 
     return Question(
         title=title,
-        stem_image=_finalize_for_display(stem, (400,140)),
-        options=options,
+        stem_image=_finalize_for_display(stem, (410, 160)),
+        options=ans_imgs,
         correct_index=correct_index,
         explanation=expl
     )
+
 
 
 # Placeholder for cube and assembly questions (add your full implementations here)
@@ -600,4 +605,5 @@ if gen:
     )
 else:
     st.info(_t("start_generation"))
+
 
