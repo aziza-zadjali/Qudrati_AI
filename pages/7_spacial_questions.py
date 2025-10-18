@@ -7,6 +7,7 @@
 #   - Ensures placeholder tiles match neighbor tile sizes.
 #   - Procedural generation (offline), optional LLM explanations via Ollama.
 #   - Export ZIP with images + JSON metadata.
+#   - Updated: replaced deprecated use_column_width with use_container_width.
 
 import io
 import os
@@ -213,7 +214,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
             if r == 2 and c == 2:
                 grid_imgs.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32)))
                 continue
-
             img = Image.new("RGB", img_size, (255, 255, 255))
             d = ImageDraw.Draw(img)
 
@@ -322,7 +322,6 @@ def generate_matrix_reasoning(rng: random.Random, img_size=(380, 380), cell_shap
         "grid_imgs": grid_imgs,
         "grid_size": (3, 3),
         "choices_imgs": choices_imgs,
-        # FIXED: use choices_imgs (not choices)
         "correct_index": choices_imgs.index(correct_img),
         "shape": shape,
         "rule_desc": rule_desc,
@@ -605,12 +604,12 @@ if qp:
     with colQ:
         if show_guides:
             st.subheader("Question")
-        st.image(qp["problem_img"], use_column_width=True)
+        st.image(qp["problem_img"], use_container_width=True)  # updated
         st.write(qp["prompt"])
 
         if ref_files:
             with st.expander("Reference samples (uploaded)"):
-                st.image(ref_files, use_column_width=True)
+                st.image(ref_files, use_container_width=True)  # updated
 
     with colA:
         if show_guides:
@@ -619,7 +618,7 @@ if qp:
         cols2 = st.columns(2)
         for i, img in enumerate(qp["choices_imgs"]):
             with cols2[i % 2]:
-                st.image(img, caption=f"Option {qp['labels'][i]}", use_column_width=True)
+                st.image(img, caption=f"Option {qp['labels'][i]}", use_container_width=True)  # updated
 
         if st.button("Check answer"):
             if chosen == qp["correct_label"]:
