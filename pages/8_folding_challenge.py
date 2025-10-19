@@ -2,11 +2,12 @@
 # pages/8_folding_challenge.py
 #
 # Paper Folding — Two-Panel Example (Single Fold)
-# - Left tile: folded reference (one paper; the other half is dotted)
-# - Right tile: plain paper with fold line + arrow that CROSSES the dotted line
-# - Single fold (L/R/U/D). Shapes appear only on the folding half.
-# - Uniform tile size everywhere; choices have no extra container box.
-# - Arabic prompt outside images; clean ZIP export.
+# Directions fixed to match exam references:
+# - Vertical fold: Right → Left  (L)
+# - Horizontal fold: Bottom → Top (U)
+# Left tile = folded reference (other half dotted), shapes on folding half.
+# Right tile = plain paper with fold line + arrow that CROSSES the dotted line.
+# Uniform tile size; choices have no extra outer box; Arabic prompt outside images.
 
 import io, time, math, random, zipfile, json
 from typing import List, Tuple, Optional, Dict
@@ -207,7 +208,8 @@ def draw_example(direction: str,
         arc_right  = pr - int(0.06 * Wp)
         arc_top    = pt + int(0.18 * Hp)
         arc_bottom = pt + int(0.78 * Hp)
-        start_deg, end_deg = (210, -20) if direction == "L" else (-20, 210)
+        # Right → Left (L)
+        start_deg, end_deg = (210, -20)
         draw_arc_arrow(rd, (arc_left, arc_top, arc_right, arc_bottom),
                        start_deg, end_deg, outline, width=6, head_len=18, head_w=12)
     else:
@@ -218,7 +220,8 @@ def draw_example(direction: str,
         arc_right  = pr - int(0.10 * Wp)
         arc_top    = pt + int(0.06 * Hp)
         arc_bottom = pb - int(0.06 * Hp)
-        start_deg, end_deg = (160, 340) if direction == "U" else (-20, 160)
+        # Bottom → Top (U)
+        start_deg, end_deg = (160, 340)
         draw_arc_arrow(rd, (arc_left, arc_top, arc_right, arc_bottom),
                        start_deg, end_deg, outline, width=6, head_len=18, head_w=12)
 
@@ -283,7 +286,10 @@ def generate_single_fold_question(rng: random.Random, style: Optional[Dict] = No
     outline = (style.get("outline") if style else None) or (20, 20, 20)
     fold_line_color = (style.get("fold_line") if style else None) or (60, 60, 60)
 
-    direction = rng.choice(["L", "R", "U", "D"])
+    # Choose axis randomly, but clamp direction:
+    # Vertical → Right-to-Left (L).  Horizontal → Bottom-to-Top (U).
+    axis_choice = rng.choice(["V", "H"])
+    direction = "L" if axis_choice == "V" else "U"
     axis, shaded_half = dir_to_axis_and_half(direction)
 
     # Sample two shapes on the folding half
@@ -455,7 +461,7 @@ if qp:
                     "direction": local_pack["meta"]["direction"],
                     "axis": local_pack["meta"]["axis"],
                     "half": local_pack["meta"]["half"],
-                    "shapes_half": local_pack["meta"]["shapes_half"],
+                    "shapes_half": local_pack["shapes_half"],
                     "prompt": local_pack["prompt"],
                     "labels": local_pack["labels_ar"],
                     "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
