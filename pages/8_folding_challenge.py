@@ -6,10 +6,10 @@
 # Shapes are drawn on the VISIBLE (non-dotted) half.
 # RIGHT tile: plain paper, center dotted line, big curved arrow that crosses the line.
 # Choices: The correct answer shows BOTH the original shapes and their mirrored counterparts
-# after unfolding (double-print). Distractors are designed accordingly.
+# after unfolding (double-print). Triangles are polygons AND are truly reflected.
 
 import io, time, math, random, zipfile, json
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Union
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -107,20 +107,40 @@ def draw_arc_arrow(draw, bbox, start_deg, end_deg, color, width=6, head_len=18, 
                   (bx - px * head_w, by - py * head_w)],
                  fill=color)
 
-def draw_shape_outline(draw, center, size, shape, color, width):
-    cx, cy = center
-    if shape == "circle":
-        r = size
+# === NEW: general shape draw that supports polygons ===================
+def draw_shape(draw: ImageDraw.ImageDraw,
+               entry: Dict,
+               color=(20,20,20),
+               width=4,
+               size_px=10*DPI):
+    """
+    entry:
+      {
+        "shape": "circle"|"square"|"triangle",
+        "center": (px, py),
+        # for triangle only:
+        "poly": [(x1,y1),(x2,y2),(x3,y3)]   # optional, if present we'll draw polygon
+      }
+    """
+    shp = entry["shape"]
+    cx, cy = entry["center"]
+    if shp == "triangle" and "poly" in entry and entry["poly"]:
+        pts = entry["poly"]
+        # outline triangle and close
+        draw.line([pts[0], pts[1], pts[2], pts[0]], fill=color, width=width)
+        return
+    if shp == "circle":
+        r = size_px
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=width)
-    elif shape == "triangle":
-        s = size * 1.6
+    elif shp == "square":
+        s = size_px * 1.4
+        draw.rectangle([cx - s, cy - s, cx + s, cy + s], outline=color, width=width)
+    else:  # fallback triangle without polygon (upright)
+        s = size_px * 1.6
         p1 = (cx,         cy - s * 0.9)
         p2 = (cx - s,     cy + s * 0.9)
         p3 = (cx + s,     cy + s * 0.9)
         draw.line([p1, p2, p3, p1], fill=color, width=width)
-    else:  # square
-        s = size * 1.4
-        draw.rectangle([cx - s, cy - s, cx + s, cy + s], outline=color, width=width)
 
 # -------------------------- adaptive canvas/paper --------------------------
 def get_tile_size(axis: str) -> Tuple[int, int]:
@@ -186,9 +206,41 @@ def style_folded_edges(draw: ImageDraw.ImageDraw, rect, axis: str, fold_half: st
             dotted_line_circles(draw, (l, b), (cx, b), dotted_color, 4, 16)
             draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
 
+# -------------------------- TRIANGLE helpers --------------------------
+### TRIANGLE FIX: build a triangle polygon with rotation (to make mirror visible)
+def _rotate_point(px, py, cx, cy, deg):
+    th = math.radians(deg)
+    dx, dy = px - cx, py - cy
+    rx = dx * math.cos(th) - dy * math.sin(th)
+    ry = dx * math.sin(th) + dy * math.cos(th)
+    return (cx + rx, cy + ry)
+
+def make_triangle_poly(center_px: Tuple[float, float],
+                       size_px: float,
+                       rotation_deg: float = 0.0) -> List[Tuple[float, float]]:
+    cx, cy = center_px
+    # define an upright isosceles triangle around the center, then rotate
+    h = size_px * 1.8
+    w = size_px * 1.2
+    p1 = (cx,      cy - h)  # apex up
+    p2 = (cx - w,  cy + h)  # base left
+    p3 = (cx + w,  cy + h)  # base right
+    if abs(rotation_deg) > 1e-6:
+        p1 = _rotate_point(*p1, cx, cy, rotation_deg)
+        p2 = _rotate_point(*p2, cx, cy, rotation_deg)
+        p3 = _rotate_point(*p3, cx, cy, rotation_deg)
+    return [p1, p2, p3]
+
+def reflect_points(points: List[Tuple[float, float]], rect, axis: str):
+    l, t, r, b = rect
+    if axis == "V":
+        return [(l + r - x, y) for (x, y) in points]
+    else:
+        return [(x, t + b - y) for (x, y) in points]
+
 # -------------------------- example (two tiles) --------------------------
 def draw_example(direction: str,
-                 shapes_visible: List[Tuple[str, Tuple[float, float]]],
+                 shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]],
                  tile_size: Tuple[int, int],
                  ratio: float,
                  bg=(255, 255, 255), paper_fill=(250, 250, 250),
@@ -208,9 +260,13 @@ def draw_example(direction: str,
     style_folded_edges(ld, (pl, pt, pr, pb), axis, fold_half, paper_fill, outline, fold_line_color, 6)
 
     # shapes on the VISIBLE half only
-    for shp, (sx, sy) in shapes_visible:
-        px, py = norm_to_px((sx, sy), (pl, pt, pr, pb))
-        draw_shape_outline(ld, (px, py), size=10 * DPI, shape=shp, color=outline, width=5)
+    for shp, (sx, sy), rot in shapes_visible_norm:
+        cx, cy = norm_to_px((sx, sy), (pl, pt, pr, pb))
+        if shp == "triangle":
+            poly = make_triangle_poly((cx, cy), size_px=10*DPI, rotation_deg=rot)
+            draw_shape(ld, {"shape": "triangle", "center": (cx, cy), "poly": poly}, color=outline, width=5)
+        else:
+            draw_shape(ld, {"shape": shp, "center": (cx, cy)}, color=outline, width=5, size_px=10*DPI)
 
     # Right tile: plain paper + dotted center + big arrow crossing
     right = Image.new("RGB", (TW, TH), bg)
@@ -242,8 +298,8 @@ def draw_example(direction: str,
         example = example.resize((example.width // DPI, example.height // DPI), Image.LANCZOS)
     return example
 
-# -------------------------- choices --------------------------
-def draw_choice(shapes_px: List[Tuple[str, Tuple[float, float]]],
+# -------------------------- choice rendering --------------------------
+def draw_choice(shape_entries: List[Dict],
                 tile_size: Tuple[int, int], ratio: float,
                 bg=(255, 255, 255), paper_fill=(250, 250, 250),
                 outline=(20, 20, 20)) -> Image.Image:
@@ -255,8 +311,8 @@ def draw_choice(shapes_px: List[Tuple[str, Tuple[float, float]]],
     paper_shadow(img, (l, t, r, b))
     rounded_rect(d, (l, t, r, b), 14, paper_fill, outline, 6)
 
-    for shp, (px, py) in shapes_px:
-        draw_shape_outline(d, (px, py), size=10 * DPI, shape=shp, color=outline, width=4)
+    for entry in shape_entries:
+        draw_shape(d, entry, color=outline, width=4, size_px=10*DPI)
 
     return img.resize(tile_size, Image.LANCZOS) if DPI != 1 else img
 
@@ -289,21 +345,38 @@ def stack_vertical(top_img, bottom_img, pad=24, bg=(255, 255, 255)):
     canvas.paste(bottom_img, ((W - bottom_img.width) // 2, top_img.height + 2 * pad))
     return canvas
 
-# -------------------------- geometry helpers --------------------------
-def reflect_points_px(points_px: List[Tuple[str, Tuple[float, float]]],
-                      rect, axis: str) -> List[Tuple[str, Tuple[float, float]]]:
+# -------------------------- shape building & reflection --------------------------
+### TRIANGLE FIX: Build canonical entries for rendering (with polygons for triangles)
+def build_visible_entries_px(shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]],
+                             rect, size_px=10*DPI) -> List[Dict]:
+    l, t, r, b = rect
+    entries = []
+    for shp, (nx, ny), rot in shapes_visible_norm:
+        cx, cy = norm_to_px((nx, ny), (l, t, r, b))
+        if shp == "triangle":
+            poly = make_triangle_poly((cx, cy), size_px=size_px, rotation_deg=rot)
+            entries.append({"shape": "triangle", "center": (cx, cy), "poly": poly})
+        else:
+            entries.append({"shape": shp, "center": (cx, cy)})
+    return entries
+
+def reflect_entries(entries: List[Dict], rect, axis: str) -> List[Dict]:
     l, t, r, b = rect
     out = []
-    if axis == "V":
-        for shp, (px, py) in points_px:
-            out.append((shp, (l + r - px, py)))     # reflect across vertical midline
-    else:
-        for shp, (px, py) in points_px:
-            out.append((shp, (px, t + b - py)))     # reflect across horizontal midline
-    return out
+    for e in entries:
+        shp = e["shape"]
+        cx, cy = e["center"]
+        if axis == "V":
+            rc = (l + r - cx, cy)
+        else:
+            rc = (cx, t + b - cy)
 
-def normalized_to_px_list(shapes_norm, rect):
-    return [(s, norm_to_px(p, rect)) for (s, p) in shapes_norm]
+        if shp == "triangle" and "poly" in e:
+            rpoly = reflect_points(e["poly"], rect, axis)
+            out.append({"shape": "triangle", "center": rc, "poly": rpoly})
+        else:
+            out.append({"shape": shp, "center": rc})
+    return out
 
 # -------------------------- generator --------------------------
 def generate_single_fold_question(rng: random.Random,
@@ -353,43 +426,63 @@ def generate_single_fold_question(rng: random.Random,
             p = sample_point_on_half(); tries += 1
         pts.append(p)
 
+    # Pick shapes; ensure we have a triangle in the set frequently for visibility
     shapes = ["circle", "triangle"]; rng.shuffle(shapes)
-    shapes_visible = [(shapes[0], pts[0]), (shapes[1], pts[1])]
+    # Small rotation for triangle so mirror is visible (e.g., -30..30 degrees)
+    def tri_rot(): return rng.uniform(-30, 30)
+
+    shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]] = []
+    for i in range(2):
+        shp = shapes[i]
+        rot = tri_rot() if shp == "triangle" else 0.0
+        shapes_visible_norm.append((shp, pts[i], rot))
 
     # Prepare pixel-space geometry on one canonical paper rect
     TW, TH = [d * DPI for d in tile_size]
     l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
 
-    shapes_visible_px = normalized_to_px_list(shapes_visible, (l, t, r, b))
-    mirrored_px = reflect_points_px(shapes_visible_px, (l, t, r, b), axis)
+    # Build entries for visible side (with triangle polygons where applicable)
+    base_entries = build_visible_entries_px(shapes_visible_norm, (l, t, r, b), size_px=10*DPI)
+    # Mirror entries across the exact fold axis (reflect polygon points for triangles)
+    mirrored_entries = reflect_entries(base_entries, (l, t, r, b), axis)
 
     # --- Correct choice: BOTH sides after opening (originals + mirrored) ---
-    shapes_correct_px = shapes_visible_px + mirrored_px
+    shapes_correct_entries = base_entries + mirrored_entries
 
     # Distractors:
     # (1) Originals only (no reflection)
-    shapes_wrong1_px = list(shapes_visible_px)
+    shapes_wrong1_entries = base_entries
 
     # (2) Wrong-axis reflection + originals
     wrong_axis = "H" if axis == "V" else "V"
-    shapes_wrong2_px = shapes_visible_px + reflect_points_px(shapes_visible_px, (l, t, r, b), wrong_axis)
+    wrong_axis_mirror = reflect_entries(base_entries, (l, t, r, b), wrong_axis)
+    shapes_wrong2_entries = base_entries + wrong_axis_mirror
 
     # (3) Correct-axis reflection but swap shape types on the mirrored side
-    swap = {"circle": "triangle", "triangle": "circle"}
-    swapped_mirror_px = [(swap[s], pt) for (s, pt) in mirrored_px]
-    shapes_wrong3_px = shapes_visible_px + swapped_mirror_px
+    def swap_entry(e: Dict) -> Dict:
+        if e["shape"] == "circle":
+            return {"shape": "triangle", "center": e["center"],
+                    "poly": make_triangle_poly(e["center"], size_px=10*DPI, rotation_deg=15)}
+        elif e["shape"] == "triangle":
+            return {"shape": "circle", "center": e["center"]}
+        else:
+            # square -> circle (optional), keep simple
+            return {"shape": "circle", "center": e["center"]}
+
+    swapped_mirror = [swap_entry(e) for e in mirrored_entries]
+    shapes_wrong3_entries = base_entries + swapped_mirror
 
     # Render choices
-    c0 = draw_choice(shapes_correct_px, tile_size, ratio, bg, paper_fill, outline)
-    c1 = draw_choice(shapes_wrong1_px, tile_size, ratio, bg, paper_fill, outline)
-    c2 = draw_choice(shapes_wrong2_px, tile_size, ratio, bg, paper_fill, outline)
-    c3 = draw_choice(shapes_wrong3_px, tile_size, ratio, bg, paper_fill, outline)
+    c0 = draw_choice(shapes_correct_entries, tile_size, ratio, bg, paper_fill, outline)
+    c1 = draw_choice(shapes_wrong1_entries, tile_size, ratio, bg, paper_fill, outline)
+    c2 = draw_choice(shapes_wrong2_entries, tile_size, ratio, bg, paper_fill, outline)
+    c3 = draw_choice(shapes_wrong3_entries, tile_size, ratio, bg, paper_fill, outline)
 
     choices = [c0, c1, c2, c3]; random.shuffle(choices); correct_index = choices.index(c0)
 
     labels_ar = ["أ", "ب", "ج", "د"]
     grid = compose_2x2_grid(choices, labels_ar, pad=18, bg=bg)
-    example = draw_example(direction, shapes_visible, tile_size, ratio, bg, paper_fill, outline, fold_color)
+    example = draw_example(direction, shapes_visible_norm, tile_size, ratio, bg, paper_fill, outline, fold_color)
 
     prompt_ar = "ما رمز البديل الذي يُظهر الأشكال الأصلية مع انعكاسها الصحيح بعد فتح الورقة؟"
     meta = {
@@ -400,7 +493,7 @@ def generate_single_fold_question(rng: random.Random,
         "visible_half": visible_half,
         "ratio": ratio,
         "tile_size": tile_size,
-        "shapes_visible": shapes_visible
+        "shapes_visible": shapes_visible_norm  # includes rotation for triangles
     }
     return {
         "problem_img": example,
