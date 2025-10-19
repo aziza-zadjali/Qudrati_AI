@@ -693,4 +693,3 @@ if qp:
             file_name=f"batch_folding_two_panel_{int(time.time())}.zip",
             mime="application/zip"
         )
-``
