@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # pages/8_folding_challenge.py
-# Folding Challenge generator (with diagonal folds), ASCII-only, Pillow 10+ safe.
+# Folding Challenge generator (with optional diagonal folds), ASCII-only drawing (Pillow 10+ safe).
 
 import io
 import time
@@ -16,7 +16,6 @@ from PIL import Image, ImageDraw, ImageFont
 # ----------------------------
 # Utilities (Pillow-safe text, RNG, colors)
 # ----------------------------
-
 def make_rng(seed: Optional[int]) -> random.Random:
     if seed is None:
         seed = int(time.time() * 1000) % 2147483647
@@ -74,16 +73,15 @@ def show_image(img, caption=None):
 # ----------------------------
 # Folding math: reflect and unfold (supports diagonals)
 # ----------------------------
-
 def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
     x, y = p
-    if axis == "V":     # reflect across x=0
+    if axis == "V":  # reflect across x=0
         return (-x, y)
-    if axis == "H":     # reflect across y=0
+    if axis == "H":  # reflect across y=0
         return (x, -y)
-    if axis == "D1":    # reflect across y = x
+    if axis == "D1":  # reflect across y = x
         return (y, x)
-    if axis == "D2":    # reflect across y = -x
+    if axis == "D2":  # reflect across y = -x
         return (-y, -x)
     return (x, y)
 
@@ -129,7 +127,6 @@ def draw_fold_icon(direction: str, size=(180, 180),
     d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
     cx, cy = W // 2, H // 2
     Llen = min(W, H) // 3
-
     if direction == "L":
         start, end = (cx + Llen // 2, cy), (cx - Llen, cy)
     elif direction == "R":
@@ -146,7 +143,6 @@ def draw_fold_icon(direction: str, size=(180, 180),
         start, end = (cx + Llen // 2, cy - Llen // 2), (cx - Llen, cy + Llen)
     else:  # "DR"
         start, end = (cx - Llen // 2, cy - Llen // 2), (cx + Llen, cy + Llen)
-
     _arrow(d, start, end, outline, stroke)
     return img
 
@@ -181,6 +177,7 @@ def draw_folded_with_punch(point_folded: Tuple[float, float], size=(220, 220),
     py = (1 - (y + 1) / 2.0) * (bottom - top) + top
     r = 10
     d.ellipse([px - r, py - r, px + r, py + r], fill=outline, outline=outline)
+    # Keep English here to avoid Arabic shaping issues on Pillow
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", 18)
     except Exception:
@@ -204,9 +201,8 @@ def compose_row(images, pad=16, bg=(255, 255, 255)) -> Image.Image:
 # ----------------------------
 # Generator: Folding Challenge
 # ----------------------------
-
 def generate_folding_challenge(rng: random.Random, difficulty="Medium",
-                               allow_diagonal=True, style: Optional[Dict] = None) -> Dict:
+                               allow_diagonal=False, style: Optional[Dict] = None) -> Dict:
     bg = (style.get("bg") if style else None) or (255, 255, 255)
     paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
     outline = (style.get("outline") if style else None) or (20, 20, 20)
@@ -223,7 +219,6 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     dirs_card = ["L", "R", "U", "D"]
     dirs_diag = ["UL", "UR", "DL", "DR"]
     dirs_all = dirs_card + (dirs_diag if allow_diagonal else [])
-
     folds = []
     for i in range(n_folds):
         cand = rng.choice(dirs_all) if i == 0 else rng.choice([d for d in dirs_all if d != folds[-1]])
@@ -240,6 +235,7 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     px = rng.uniform(-0.65, 0.65)
     py = rng.uniform(-0.65, 0.65)
     point_folded = (px, py)
+
     holes = unfold_points(point_folded, axes)
 
     # Build problem: fold icons row + folded paper with punch
@@ -257,6 +253,7 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
 
     # Choices (correct + 3 distractors)
     correct = draw_paper_with_holes(holes=holes, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke)
+
     if len(axes) > 0:
         holes_d1 = unfold_points(point_folded, axes[:-1])
     else:
@@ -278,41 +275,48 @@ def generate_folding_challenge(rng: random.Random, difficulty="Medium",
     rng.shuffle(choices)
     answer_index = choices.index(correct)
 
+    # Arabic prompt (exact phrase requested)
+    prompt_ar = "ما رمز البديل الذي يحتوي على صورة الورقة بعد إعادة فتحها من بين البدائل الأربعة؟"
+    rule_desc_ar = "عند فتح كل طية، تنعكس مواضع الثقوب عبر خط الطي."
+
     return {
         "problem_img": problem,
         "choices_imgs": choices,
         "correct_index": answer_index,
-        "prompt": "Paper is folded in the shown order. A hole is punched as marked. Which option shows the fully unfolded paper?",
-        "rule_desc": "Unfold across each fold line; each fold mirrors hole positions.",
+        "prompt": prompt_ar,
+        "rule_desc": rule_desc_ar,
         "meta": {"type": "folding", "folds": folds, "axes": axes, "punch": (round(px,3), round(py,3))}
     }
 
 # ----------------------------
-# Streamlit UI
+# Streamlit UI (Arabic)
 # ----------------------------
-
-st.set_page_config(page_title="Folding Challenge", layout="wide")
-st.title("Folding Challenge (with diagonal folds)")
+st.set_page_config(page_title="تحدي طي الورقة", layout="wide")
+st.title("تحدي طي الورقة")
 
 with st.sidebar:
-    st.header("Controls")
-    difficulty = st.select_slider("Difficulty", options=["Easy", "Medium", "Hard"], value="Medium")
-    seed_str = st.text_input("Seed (optional)", value="")
+    st.header("التحكم")
+    # Difficulty (Arabic UI -> English internal)
+    diff_map = {"سهل": "Easy", "متوسط": "Medium", "صعب": "Hard"}
+    diff_choice = st.select_slider("مستوى الصعوبة", options=list(diff_map.keys()), value="متوسط")
+    difficulty = diff_map[diff_choice]
+
+    seed_str = st.text_input("البذرة (اختياري)", value="")
     seed = None
     if seed_str.strip():
         try:
             seed = int(seed_str.strip())
         except Exception:
             seed = abs(hash(seed_str)) % (2**31)
-    allow_diag = st.checkbox("Allow diagonal folds", value=True)
 
-    st.header("Visuals")
-    bg_hex = st.text_input("Background", "#FFFFFF")
-    paper_hex = st.text_input("Paper fill", "#FAFAFA")
-    outline_hex = st.text_input("Outline", "#141414")
-    text_hex = st.text_input("Text", "#141414")
-    stroke_w = st.number_input("Stroke width", min_value=2, max_value=12, value=5, step=1)
+    allow_diag = st.checkbox("السماح بالطيات القطرية", value=False)
 
+    st.header("التنسيق البصري")
+    bg_hex = st.text_input("لون الخلفية", "#FFFFFF")
+    paper_hex = st.text_input("لون الورقة", "#FAFAFA")
+    outline_hex = st.text_input("لون الحدود", "#141414")
+    text_hex = st.text_input("لون النص", "#141414")
+    stroke_w = st.number_input("سماكة الحدود", min_value=2, max_value=12, value=5, step=1)
     style = {
         "bg": _hex_to_rgb(bg_hex),
         "paper_fill": _hex_to_rgb(paper_hex),
@@ -322,11 +326,11 @@ with st.sidebar:
     }
 
     st.markdown("---")
-    gen_btn = st.button("Generate New Question", type="primary", use_container_width=True)
+    gen_btn = st.button("إنشاء سؤال جديد", type="primary", use_container_width=True)
 
-    st.subheader("Batch")
-    batch_n = st.number_input("How many to generate", min_value=2, max_value=100, value=10, step=1)
-    batch_btn = st.button("Generate Batch ZIP", use_container_width=True)
+    st.subheader("إنشاء مجموعة (Batch)")
+    batch_n = st.number_input("عدد الأسئلة في المجموعة", min_value=2, max_value=100, value=10, step=1)
+    batch_btn = st.button("إنشاء ملف ZIP للمجموعة", use_container_width=True)
 
 rng = make_rng(seed)
 
@@ -340,46 +344,65 @@ qp = st.session_state.get("fold_qpack")
 
 if qp:
     colQ, colA = st.columns([2.1, 1.4])
+
+    labels_ar = ["أ", "ب", "ج", "د"]  # Arabic option symbols
+
     with colQ:
-        st.subheader("Question")
+        st.subheader("السؤال")
         show_image(qp["problem_img"])
+        # Exact Arabic question text
         st.write(qp["prompt"])
+
     with colA:
-        st.subheader("Choices")
-        labels = [chr(ord('A') + i) for i in range(len(qp["choices_imgs"]))]
-        chosen = st.radio("Select your answer:", labels, index=0, horizontal=True, label_visibility="collapsed")
+        st.subheader("البدائل")
+        chosen = st.radio("اختر الإجابة:", labels_ar, index=0, horizontal=True, label_visibility="collapsed")
+
         cols2 = st.columns(2)
         for i, im in enumerate(qp["choices_imgs"]):
             with cols2[i % 2]:
-                show_image(im, caption="Option " + labels[i])
-        if st.button("Check answer"):
-            if chosen == labels[qp["correct_index"]]:
-                st.success("Correct. Answer: " + labels[qp["correct_index"]])
+                show_image(im, caption=f"البديل {labels_ar[i]}")
+
+        if st.button("تحقق من الإجابة"):
+            if chosen == labels_ar[qp["correct_index"]]:
+                st.success(f"صحيح. الإجابة: البديل {labels_ar[qp['correct_index']]}")
             else:
-                st.error("Not quite. Correct answer: " + labels[qp["correct_index"]])
-            st.markdown("Why: " + qp["rule_desc"])
+                st.error(f"غير صحيح. الإجابة الصحيحة: البديل {labels_ar[qp['correct_index']]}")
+            st.markdown("**القاعدة:** " + qp["rule_desc"])
 
     st.markdown("---")
-    st.subheader("Export")
+    st.subheader("تصدير السؤال")
+
+    # Single export ZIP
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Images
         pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG")
         zf.writestr("problem.png", pb.getvalue())
-        labels = [chr(ord('A') + i) for i in range(len(qp["choices_imgs"]))]
         for i, im in enumerate(qp["choices_imgs"]):
             cb = io.BytesIO(); im.save(cb, format="PNG")
-            zf.writestr("choice_%s.png" % labels[i], cb.getvalue())
+            zf.writestr(f"choice_{labels_ar[i]}.png", cb.getvalue())
+
+        # Metadata (Arabic preserved)
         meta = {
             "type": qp["meta"]["type"],
             "folds": qp["meta"]["folds"],
             "axes": qp["meta"]["axes"],
             "punch": qp["meta"]["punch"],
-            "correct_label": labels[qp["correct_index"]],
-            "rule": qp["rule_desc"]
+            "prompt": qp["prompt"],
+            "labels": labels_ar,
+            "correct_label": labels_ar[qp["correct_index"]],
+            "rule": qp["rule_desc"],
         }
-        zf.writestr("question.json", json.dumps(meta, indent=2))
-    st.download_button("Download ZIP", data=buf.getvalue(), file_name="folding_%d.zip" % int(time.time()), mime="application/zip")
+        zf.writestr("question.json", json.dumps(meta, indent=2, ensure_ascii=False))
 
+    st.download_button(
+        "تنزيل ملف ZIP",
+        data=buf.getvalue(),
+        file_name=f"folding_{int(time.time())}.zip",
+        mime="application/zip"
+    )
+
+    # Batch export
     if batch_btn:
         bbuf = io.BytesIO()
         with zipfile.ZipFile(bbuf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -388,25 +411,34 @@ if qp:
                 # new RNG per item for reproducibility across batch
                 local_rng = make_rng((seed or 0) + k + 1)
                 local_pack = generate_folding_challenge(local_rng, difficulty=difficulty, allow_diagonal=allow_diag, style=style)
-                qid = "folding_%d_%d" % (int(time.time()*1000), k)
+                qid = f"folding_{int(time.time()*1000)}_{k}"
+
                 pb = io.BytesIO(); local_pack["problem_img"].save(pb, format="PNG")
-                zf.writestr("%s/problem.png" % qid, pb.getvalue())
-                labels = [chr(ord('A') + i) for i in range(len(local_pack["choices_imgs"]))]
+                zf.writestr(f"{qid}/problem.png", pb.getvalue())
+
                 for i, im in enumerate(local_pack["choices_imgs"]):
                     cb = io.BytesIO(); im.save(cb, format="PNG")
-                    zf.writestr("%s/choice_%s.png" % (qid, labels[i]), cb.getvalue())
+                    zf.writestr(f"{qid}/choice_{labels_ar[i]}.png", cb.getvalue())
+
                 meta = {
                     "id": qid,
                     "type": local_pack["meta"]["type"],
                     "folds": local_pack["meta"]["folds"],
                     "axes": local_pack["meta"]["axes"],
                     "punch": local_pack["meta"]["punch"],
-                    "correct_label": labels[local_pack["correct_index"]],
-                    "rule": local_pack["rule_desc"]
+                    "prompt": local_pack["prompt"],
+                    "labels": labels_ar,
+                    "correct_label": labels_ar[local_pack["correct_index"]],
+                    "rule": local_pack["rule_desc"],
                 }
-                zf.writestr("%s/question.json" % qid, json.dumps(meta, indent=2))
+                zf.writestr(f"{qid}/question.json", json.dumps(meta, indent=2, ensure_ascii=False))
                 index.append(meta)
-            zf.writestr("index.json", json.dumps(index, indent=2))
-        st.download_button("Download Batch ZIP", data=bbuf.getvalue(),
-                           file_name="batch_folding_%d.zip" % int(time.time()),
-                           mime="application/zip")
+
+            zf.writestr("index.json", json.dumps(index, indent=2, ensure_ascii=False))
+
+        st.download_button(
+            "تنزيل ملف ZIP للمجموعة",
+            data=bbuf.getvalue(),
+            file_name=f"batch_folding_{int(time.time())}.zip",
+            mime="application/zip"
+        )
