@@ -51,7 +51,7 @@ def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
 def dir_to_axis_and_half(direction: str):
     if direction == "L":  # fold left: right half folds onto left
         return "V", "right"
-    if direction == "R":  # fold right: left half folds onto right
+    if direction == "R":  # (unused) fold right: left half folds onto right
         return "V", "left"
     if direction == "U":  # fold up: bottom half folds onto top
         return "H", "bottom"
@@ -461,7 +461,7 @@ if qp:
                     "direction": local_pack["meta"]["direction"],
                     "axis": local_pack["meta"]["axis"],
                     "half": local_pack["meta"]["half"],
-                    "shapes_half": local_pack["shapes_half"],
+                    "shapes_half": local_pack["meta"]["shapes_half"],
                     "prompt": local_pack["prompt"],
                     "labels": local_pack["labels_ar"],
                     "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
