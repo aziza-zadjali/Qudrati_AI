@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 # pages/8_folding_challenge.py
-# Single-fold "paper folding" question — enhanced reference style:
-# - Rounded-rectangle paper with soft shadow
-# - True dotted fold line (round dots)
-# - Smooth curved arrow with proper head
-# - Solid punch circle
-# - 2x2 options (أ/ب/ج/د) with labeled badges
-# - Hi-DPI render (2x) + downsample for sharpness
-# - Arabic prompt text exactly as requested (outside image)
-# - Exports composite question.png + JSON (ensure_ascii=False)
+# Paper Folding — Reference Style with unified aspect ratio:
+# - Identical paper aspect ratio in example and all choices
+# - Curved arrow + dotted fold line + solid punch
+# - 2x2 options labeled (أ/ب/ج/د)
+# - Hi-DPI rendering (2x) then downsampled
+# - Composite question.png + JSON (ensure_ascii=False)
 
 import io
 import time
@@ -21,9 +18,19 @@ from typing import List, Tuple, Optional, Dict
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-# ----------------------------
-# Basic utils
-# ----------------------------
+# =========================
+# Config: ONE SOURCE OF TRUTH FOR ASPECT RATIO
+# =========================
+# Use A4-like ratio by default: width:height = 1 : sqrt(2) ≈ 0.707
+PAPER_RATIO_W_OVER_H = 1.0 / (2 ** 0.5)   # ~0.7071
+# If your reference uses 3:4 exactly, switch to:
+# PAPER_RATIO_W_OVER_H = 3/4
+
+DPI_SCALE_DEFAULT = 2  # 2x internal render for crisp downsampling
+
+# =========================
+# Utilities
+# =========================
 def make_rng(seed: Optional[int]) -> random.Random:
     if seed is None:
         seed = int(time.time() * 1000) % 2147483647
@@ -54,9 +61,9 @@ def show_image(img, caption=None):
     except TypeError:
         st.image(img, caption=caption, use_container_width=True)
 
-# ----------------------------
+# =========================
 # Geometry (single fold)
-# ----------------------------
+# =========================
 def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
     x, y = p
     if axis == "V":  # across x=0
@@ -87,30 +94,49 @@ def norm_to_px(xy, rect):
     py = (1 - (y + 1) / 2.0) * (bottom - top) + top
     return px, py
 
-# ----------------------------
+# =========================
+# Aspect-ratio helpers
+# =========================
+def compute_paper_rect(canvas_w: int, canvas_h: int, margin_px: int, ratio_w_over_h: float):
+    """
+    Compute a centered paper rectangle inside the canvas with the given margin
+    and paper aspect ratio (W/H). Returns (left, top, right, bottom).
+    """
+    avail_w = max(1, canvas_w - 2*margin_px)
+    avail_h = max(1, canvas_h - 2*margin_px)
+    # Fit to box while preserving ratio
+    # paper_w / paper_h = ratio
+    # if we set paper_h = avail_h, paper_w = ratio * avail_h
+    paper_w_by_h = ratio_w_over_h * avail_h
+    if paper_w_by_h <= avail_w:
+        paper_w = int(round(paper_w_by_h))
+        paper_h = avail_h
+    else:
+        paper_w = avail_w
+        paper_h = int(round(avail_w / ratio_w_over_h))
+    left = (canvas_w - paper_w) // 2
+    top = (canvas_h - paper_h) // 2
+    return (left, top, left + paper_w, top + paper_h)
+
+# =========================
 # Drawing helpers
-# ----------------------------
+# =========================
 def rounded_rect(draw: ImageDraw.ImageDraw, box, radius, fill, outline, width=3):
-    # Use rounded_rectangle if available, else fallback.
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
     else:
-        # Simple fallback: regular rectangle
         draw.rectangle(box, fill=fill, outline=outline, width=width)
 
 def paper_shadow(base_img: Image.Image, rect, blur=12, offset=(8, 10), opacity=90):
-    """Render a soft shadow and apply to base_img."""
     l, t, r, b = rect
     w, h = r - l, b - t
     shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
     sd.rectangle([0, 0, w, h], fill=(0, 0, 0, opacity))
     shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
-    # Paste with offset
     base_img.paste(shadow, (l + offset[0], t + offset[1]), shadow)
 
 def dotted_line_circles(draw: ImageDraw.ImageDraw, p1, p2, color, dot_r=3, gap=10):
-    """True dotted line using circles along a straight segment (supports V/H lines cleanly)."""
     x1, y1 = p1
     x2, y2 = p2
     length = math.hypot(x2 - x1, y2 - y1)
@@ -124,9 +150,7 @@ def dotted_line_circles(draw: ImageDraw.ImageDraw, p1, p2, color, dot_r=3, gap=1
         draw.ellipse([x - dot_r, y - dot_r, x + dot_r, y + dot_r], fill=color, outline=None)
 
 def draw_arc_arrow(draw: ImageDraw.ImageDraw, bbox, start_deg, end_deg, color, width=6, head_len=18, head_w=12):
-    """Draw arc + arrow head at end angle (degrees)."""
     draw.arc(bbox, start=start_deg, end=end_deg, fill=color, width=width)
-    # Arrow head
     cx = (bbox[0] + bbox[2]) / 2
     cy = (bbox[1] + bbox[3]) / 2
     rx = abs(bbox[2] - bbox[0]) / 2
@@ -134,12 +158,10 @@ def draw_arc_arrow(draw: ImageDraw.ImageDraw, bbox, start_deg, end_deg, color, w
     t = math.radians(end_deg)
     tip_x = cx + rx * math.cos(t)
     tip_y = cy + ry * math.sin(t)
-    # Tangent direction
     vx = -rx * math.sin(t)
     vy =  ry * math.cos(t)
     L = math.hypot(vx, vy) or 1.0
     ux, uy = vx / L, vy / L
-    # Perp for head width
     px, py = -uy, ux
     base_x = tip_x - ux * head_len
     base_y = tip_y - uy * head_len
@@ -160,7 +182,7 @@ def overlay_label(img: Image.Image, label: str, spot="tr",
         cx, cy = im.width - margin - r, margin + r
     elif spot == "bl":
         cx, cy = margin + r, im.height - margin - r
-    else:  # br
+    else:  # "br"
         cx, cy = im.width - margin - r, im.height - margin - r
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=circle_fill, outline=circle_outline, width=2)
     font = _try_font(18)
@@ -197,37 +219,56 @@ def stack_vertical(top_img: Image.Image, bottom_img: Image.Image, pad=24, bg=(25
     canvas.paste(bottom_img, (x_bot, top_img.height + 2*pad))
     return canvas
 
-# ----------------------------
-# Reference-style problem (Hi-DPI)
-# ----------------------------
-def draw_problem(direction: str, hole_xy_norm: Tuple[float,float],
-                 size=(700, 440), paper_size=(320, 440),
+# =========================
+# Reference-style example (folded paper) — using unified aspect ratio
+# =========================
+def draw_example(direction: str, hole_xy_norm: Tuple[float,float],
+                 out_width: int,  # final width in px (1x)
                  bg=(255,255,255), paper_fill=(250,250,250),
                  outline=(20,20,20), fold_line_color=(60,60,60),
-                 stroke=4, dpi_scale=2) -> Image.Image:
+                 stroke=4, dpi_scale=DPI_SCALE_DEFAULT) -> Image.Image:
+    """
+    Renders the example (folded paper) with the same PAPER_RATIO_W_OVER_H used in choices.
+    The canvas width is given; height is deduced from paper height & arrow block to match a tidy layout.
+    """
+    # Design: reserve ~65% of width for paper, ~35% for arrow block
+    paper_block_w = int(out_width * 0.62)
+    arrow_block_w = out_width - paper_block_w
+    # Make height driven by paper height for the chosen ratio
+    # Paper rect is centered inside its block with top/bottom margins
+    margin = 20
+    paper_rect = compute_paper_rect(paper_block_w, int(paper_block_w / PAPER_RATIO_W_OVER_H) + 2*margin,
+                                    margin, PAPER_RATIO_W_OVER_H)
+    # Canvas height equals paper_block height (plus a small top/bottom margin already inside)
+    out_height = paper_rect[3] - paper_rect[1] + 2*margin
+
     # Hi-DPI canvas
-    W, H = size[0]*dpi_scale, size[1]*dpi_scale
-    pW, pH = paper_size[0]*dpi_scale, paper_size[1]*dpi_scale
+    W, H = out_width * dpi_scale, out_height * dpi_scale
     img = Image.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(img)
 
-    margin = 22 * dpi_scale
-    paper_left = margin
-    paper_top = (H - pH) // 2
-    paper_rect = (paper_left, paper_top, paper_left + pW, paper_top + pH)
+    # Compute paper rect in full canvas coords (inside the left block)
+    # Left block origin:
+    left_block_left = 0
+    left_block_top = 0
+    # Paper rect coords (as computed) are relative to a 'paper block' box starting at (0,0)
+    pr_l, pr_t, pr_r, pr_b = paper_rect
+    # Paste into the left block
+    pr_l += left_block_left
+    pr_r += left_block_left
+    pr_t += left_block_top
+    pr_b += left_block_top
+    paper_rect_canvas = (pr_l * dpi_scale, pr_t * dpi_scale, pr_r * dpi_scale, pr_b * dpi_scale)
 
-    # Soft shadow
-    paper_shadow(img, paper_rect, blur=14, offset=(10*dpi_scale//2, 12*dpi_scale//2), opacity=85)
+    # Soft shadow + rounded paper
+    paper_shadow(img, paper_rect_canvas, blur=14, offset=(6*dpi_scale, 8*dpi_scale), opacity=80)
+    rounded_rect(d, paper_rect_canvas, radius=14*dpi_scale, fill=paper_fill, outline=outline, width=stroke*dpi_scale)
 
-    # Paper with rounded corners
-    rounded_rect(d, paper_rect, radius=16*dpi_scale, fill=paper_fill, outline=outline, width=stroke*dpi_scale)
-
-    # Fold axis & dotted line
+    # Fold line (dotted) and shaded half
     axis, shaded_half = dir_to_axis_and_half(direction)
-    l, t, r, b = paper_rect
+    l, t, r, b = paper_rect_canvas
     cx = (l + r) // 2
     cy = (t + b) // 2
-    # Dotted fold line (round dots)
     if axis == "V":
         dotted_line_circles(d, (cx, t + 10*dpi_scale), (cx, b - 10*dpi_scale),
                             fold_line_color, dot_r=3*dpi_scale, gap=13*dpi_scale)
@@ -235,10 +276,10 @@ def draw_problem(direction: str, hole_xy_norm: Tuple[float,float],
         dotted_line_circles(d, (l + 10*dpi_scale, cy), (r - 10*dpi_scale, cy),
                             fold_line_color, dot_r=3*dpi_scale, gap=13*dpi_scale)
 
-    # Subtle shaded half (semi-transparent overlay)
+    # Shaded half overlay
     shade = Image.new("RGBA", (r - l, b - t), (0,0,0,0))
     sd = ImageDraw.Draw(shade)
-    alpha = 28  # subtle
+    alpha = 28
     if axis == "V":
         if shaded_half == "left":
             sd.rectangle([0, 0, (cx - l), b - t], fill=(0,0,0,alpha))
@@ -252,85 +293,95 @@ def draw_problem(direction: str, hole_xy_norm: Tuple[float,float],
     img.paste(shade, (l, t), shade)
 
     # Punch (solid circle)
-    hx, hy = norm_to_px(hole_xy_norm, paper_rect)
+    hx, hy = norm_to_px(hole_xy_norm, (l, t, r, b))
     pr = 11 * dpi_scale
     d.ellipse([hx - pr, hy - pr, hx + pr, hy + pr], fill=outline, outline=outline)
 
-    # Curved arrow (to the right/bottom of paper)
-    ac = outline
+    # Curved arrow block on the right side, aligned to paper midline
+    arrow_left = (paper_block_w * dpi_scale) + 8*dpi_scale
+    arrow_right = (out_width * dpi_scale) - 8*dpi_scale
+    # Vertical alignment around the paper's center
+    arc_hh = int((b - t) * 0.45)
+    arc_top = cy - arc_hh
+    arc_bottom = cy + arc_hh
+
+    # Draw arc + head based on direction
     if axis == "V":
-        arc_left = r + 34*dpi_scale
-        arc_right = arc_left + 200*dpi_scale
-        arc_top = cy - 110*dpi_scale
-        arc_bottom = cy + 110*dpi_scale
         if direction == "L":
-            start, end = -20, 210
+            start, end = -20, 215
         else:  # "R"
             start, end = 200, -20
-        draw_arc_arrow(d, (arc_left, arc_top, arc_right, arc_bottom), start, end,
-                       ac, width=6*dpi_scale, head_len=22*dpi_scale, head_w=14*dpi_scale)
+        draw_arc_arrow(d, (arrow_left, arc_top, arrow_right, arc_bottom),
+                       start, end, outline, width=6*dpi_scale, head_len=22*dpi_scale, head_w=14*dpi_scale)
     else:
-        arc_left = cx - 110*dpi_scale
-        arc_right = cx + 110*dpi_scale
-        arc_top = b + 28*dpi_scale
-        arc_bottom = arc_top + 200*dpi_scale
+        # Horizontal fold: arc below paper, centered horizontally with paper
+        arc_left = (l + r)//2 - (arrow_right - arrow_left)//3
+        arc_right = (l + r)//2 + (arrow_right - arrow_left)//3
+        arc_top2 = b + 18*dpi_scale
+        arc_bottom2 = arc_top2 + (arc_bottom - arc_top)
         if direction == "U":
             start, end = 160, 342
         else:  # "D"
             start, end = -20, 160
-        draw_arc_arrow(d, (arc_left, arc_top, arc_right, arc_bottom), start, end,
-                       ac, width=6*dpi_scale, head_len=22*dpi_scale, head_w=14*dpi_scale)
+        draw_arc_arrow(d, (arc_left, arc_top2, arc_right, arc_bottom2),
+                       start, end, outline, width=6*dpi_scale, head_len=22*dpi_scale, head_w=14*dpi_scale)
 
-    # Downsample for crisp edges
+    # Downsample
     if dpi_scale != 1:
-        img = img.resize((size[0], size[1]), Image.LANCZOS)
+        img = img.resize((out_width, out_height), Image.LANCZOS)
     return img
 
-def draw_unfolded(holes_norm: List[Tuple[float,float]],
-                  size=(360, 360), paper_margin=36,
-                  bg=(255,255,255), paper_fill=(250,250,250),
-                  outline=(20,20,20), stroke=5, dpi_scale=2) -> Image.Image:
-    W, H = size[0]*dpi_scale, size[1]*dpi_scale
-    m = paper_margin * dpi_scale
+# =========================
+# Unfolded (choices) — using the same paper ratio function
+# =========================
+def draw_unfolded_choice(holes_norm: List[Tuple[float,float]],
+                         tile_size: Tuple[int,int],  # final WxH in px (1x)
+                         bg=(255,255,255), paper_fill=(250,250,250),
+                         outline=(20,20,20), stroke=5, dpi_scale=DPI_SCALE_DEFAULT) -> Image.Image:
+    W, H = tile_size[0]*dpi_scale, tile_size[1]*dpi_scale
     img = Image.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(img)
+
+    margin = int(min(W, H) * 0.1)  # ~10% margin inside tile
+    # Paper rect with the SAME aspect ratio as example:
+    left, top, right, bottom = compute_paper_rect(W, H, margin, PAPER_RATIO_W_OVER_H)
+
     # Shadow + rounded paper
-    left, top, right, bottom = m, m, W - m, H - m
-    paper_shadow(img, (left, top, right, bottom), blur=12, offset=(8*dpi_scale//2, 10*dpi_scale//2), opacity=80)
+    paper_shadow(img, (left, top, right, bottom), blur=12, offset=(6*dpi_scale, 8*dpi_scale), opacity=80)
     rounded_rect(d, (left, top, right, bottom), radius=14*dpi_scale,
                  fill=paper_fill, outline=outline, width=stroke*dpi_scale)
+
     # Holes
     r = 11 * dpi_scale
     for (x, y) in holes_norm:
         px = (x + 1) / 2.0 * (right - left) + left
         py = (1 - (y + 1) / 2.0) * (bottom - top) + top
         d.ellipse([px - r, py - r, px + r, py + r], fill=outline, outline=outline)
+
     if dpi_scale != 1:
-        img = img.resize((size[0], size[1]), Image.LANCZOS)
+        img = img.resize((tile_size[0], tile_size[1]), Image.LANCZOS)
     return img
 
-# ----------------------------
+# =========================
 # Question generator (single fold)
-# ----------------------------
+# =========================
 def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None) -> Dict:
     bg = (style.get("bg") if style else None) or (255, 255, 255)
     paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
     outline = (style.get("outline") if style else None) or (20, 20, 20)
     fold_line_color = (style.get("fold_line") if style else None) or (60, 60, 60)
     stroke = (style.get("stroke_width") if style else None) or 5
-    dpi_scale = (style.get("dpi_scale") if style else None) or 2
+    dpi_scale = int((style.get("dpi_scale") if style else None) or DPI_SCALE_DEFAULT)
 
     # Single direction
     direction = rng.choice(["L", "R", "U", "D"])
     axis, _ = dir_to_axis_and_half(direction)
 
-    # Punch location — keep a safe margin from edges and fold axis
+    # Punch location with safe margins (to avoid touching axis or edges)
     def safe_rand():
-        # Keep at least 0.15 away from edges and 0.12 from axis for clarity
-        return rng.uniform(-0.85 + 0.3, 0.85 - 0.3)
+        return rng.uniform(-0.7, 0.7)
     px = safe_rand()
     py = safe_rand()
-    # If it's too close to the active axis, nudge it:
     if axis == "V" and abs(px) < 0.12:
         px = 0.12 * (1 if px >= 0 else -1)
     if axis == "H" and abs(py) < 0.12:
@@ -338,29 +389,32 @@ def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None
     p_folded = (px, py)
     p_reflected = reflect_point(p_folded, axis)
 
-    # Problem image
-    problem_img = draw_problem(direction, p_folded, size=(720, 460), paper_size=(340, 460),
-                               bg=bg, paper_fill=paper_fill, outline=outline,
-                               fold_line_color=fold_line_color, stroke=stroke, dpi_scale=dpi_scale)
+    # ---- Layout sizing (kept consistent) ----
+    # We size tiles first, then match example width to grid width.
+    tile_w, tile_h = 380, 420   # portrait tiles; height > width to reflect paper ratio
+    # The paper inside these tiles uses the same ratio function, so no stretching.
+    choice_size = (tile_w, tile_h)
 
-    # Choices
-    correct = draw_unfolded([p_folded, p_reflected], size=(380, 380),
-                            bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, dpi_scale=dpi_scale)
-    # Missed mirror
-    d1 = draw_unfolded([p_folded], size=(380, 380),
-                       bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, dpi_scale=dpi_scale)
-    # Wrong axis mirror
+    # Create choices
+    correct = draw_unfolded_choice([p_folded, p_reflected], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
+    d1 = draw_unfolded_choice([p_folded], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
     wrong_axis = "H" if axis == "V" else "V"
-    d2 = draw_unfolded([p_folded, reflect_point(p_folded, wrong_axis)], size=(380, 380),
-                       bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, dpi_scale=dpi_scale)
-    # Rotated misconception
+    d2 = draw_unfolded_choice([p_folded, reflect_point(p_folded, wrong_axis)], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
     rot = lambda pt: (pt[1], -pt[0])
-    d3 = draw_unfolded([rot(p_folded), rot(p_reflected)], size=(380, 380),
-                       bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, dpi_scale=dpi_scale)
+    d3 = draw_unfolded_choice([rot(p_folded), rot(p_reflected)], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
 
     choices = [correct, d1, d2, d3]
     rng.shuffle(choices)
     correct_index = choices.index(correct)
+
+    # Build 2x2 grid to know the total width
+    labels_ar = ["أ", "ب", "ج", "د"]
+    grid = compose_2x2_grid(choices, labels_ar, pad=18, tile_border=2, bg=bg, label_spot="tr")
+
+    # Now render the example to the EXACT width of the grid (clean alignment)
+    example = draw_example(direction, p_folded, out_width=grid.width,
+                           bg=bg, paper_fill=paper_fill, outline=outline,
+                           fold_line_color=fold_line_color, stroke=stroke, dpi_scale=dpi_scale)
 
     prompt_ar = "ما رمز البديل الذي يحتوي على صورة الورقة بعد إعادة فتحها من بين البدائل الأربعة؟"
     meta = {
@@ -369,19 +423,22 @@ def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None
         "axis": axis,
         "punch": (round(px, 3), round(py, 3))
     }
+
     return {
-        "problem_img": problem_img,
+        "example_img": example,         # (formerly problem_img)
         "choices_imgs": choices,
+        "grid_img": grid,               # for composing/export
         "correct_index": correct_index,
+        "labels_ar": labels_ar,
         "prompt": prompt_ar,
         "meta": meta
     }
 
-# ----------------------------
+# =========================
 # Streamlit UI
-# ----------------------------
-st.set_page_config(page_title="Paper Folding — Enhanced", layout="wide")
-st.title("Paper Folding — Enhanced Reference Style")
+# =========================
+st.set_page_config(page_title="Paper Folding — Unified Aspect Ratio", layout="wide")
+st.title("Paper Folding — Unified Aspect Ratio (Reference Style)")
 
 with st.sidebar:
     st.header("Controls")
@@ -399,7 +456,12 @@ with st.sidebar:
     outline_hex = st.text_input("Outline", "#1A1A1A")
     fold_line_hex = st.text_input("Fold-line (dots)", "#3C3C3C")
     stroke_w = st.number_input("Paper border thickness (px)", min_value=2, max_value=12, value=5, step=1)
-    dpi_scale = st.slider("Quality (internal render scale)", min_value=1, max_value=3, value=2)
+    dpi_scale = st.slider("Quality (internal render scale)", min_value=1, max_value=3, value=DPI_SCALE_DEFAULT)
+
+    # Paper ratio switch (optional)
+    ratio_choice = st.selectbox("Paper ratio", ["A4-like (1:√2)", "3:4"], index=0)
+    global PAPER_RATIO_W_OVER_H
+    PAPER_RATIO_W_OVER_H = (1.0/(2**0.5)) if ratio_choice.startswith("A4") else (3/4)
 
     st.markdown("---")
     gen_btn = st.button("Generate New Question", type="primary", use_container_width=True)
@@ -426,37 +488,38 @@ if ("fold_qpack" not in st.session_state) or gen_btn:
     st.session_state.fold_qpack = make_one()
 
 qp = st.session_state.get("fold_qpack")
-labels_ar = ["أ", "ب", "ج", "د"]
 
 if qp:
-    # Compose grid + stack
-    grid = compose_2x2_grid(qp["choices_imgs"], labels_ar, pad=18, tile_border=2, bg=style["bg"], label_spot="tr")
-    composite = stack_vertical(qp["problem_img"], grid, pad=24, bg=style["bg"])
+    # Composite (example above, 2x2 grid below). Widths already matched.
+    composite = stack_vertical(qp["example_img"], qp["grid_img"], pad=24, bg=style["bg"])
 
     st.subheader("Question")
     st.write(qp["prompt"])
     show_image(composite)
 
-    chosen = st.radio("Pick your answer:", labels_ar, index=0, horizontal=True)
+    chosen = st.radio("Pick your answer:", qp["labels_ar"], index=0, horizontal=True)
     if st.button("Check answer"):
-        if chosen == labels_ar[qp["correct_index"]]:
-            st.success(f"Correct. Answer: {labels_ar[qp['correct_index']]}")
+        if chosen == qp["labels_ar"][qp["correct_index"]]:
+            st.success(f"Correct. Answer: {qp['labels_ar'][qp['correct_index']]}")
         else:
-            st.error(f"Not quite. Correct answer: {labels_ar[qp['correct_index']]}")
+            st.error(f"Not quite. Correct answer: {qp['labels_ar'][qp['correct_index']]}")
 
     st.markdown("---")
     st.subheader("Export")
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Separate assets
-        pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG")
-        zf.writestr("problem.png", pb.getvalue())
+        # Assets
+        eb = io.BytesIO(); qp["example_img"].save(eb, format="PNG")
+        zf.writestr("example.png", eb.getvalue())
+
         for i, im in enumerate(qp["choices_imgs"]):
             cb = io.BytesIO(); im.save(cb, format="PNG")
-            zf.writestr(f"choice_{labels_ar[i]}.png", cb.getvalue())
+            zf.writestr(f"choice_{qp['labels_ar'][i]}.png", cb.getvalue())
 
-        # Composite question.png
+        gb = io.BytesIO(); qp["grid_img"].save(gb, format="PNG")
+        zf.writestr("grid.png", gb.getvalue())
+
         qb = io.BytesIO(); composite.save(qb, format="PNG")
         zf.writestr("question.png", qb.getvalue())
 
@@ -466,15 +529,16 @@ if qp:
             "axis": qp["meta"]["axis"],
             "punch": qp["meta"]["punch"],
             "prompt": qp["prompt"],
-            "labels": labels_ar,
-            "correct_label": labels_ar[qp["correct_index"]],
+            "labels": qp["labels_ar"],
+            "correct_label": qp["labels_ar"][qp["correct_index"]],
+            "paper_ratio_w_over_h": PAPER_RATIO_W_OVER_H
         }
         zf.writestr("question.json", json.dumps(meta, indent=2, ensure_ascii=False))
 
     st.download_button(
         "Download ZIP",
         data=buf.getvalue(),
-        file_name=f"folding_enh_{int(time.time())}.zip",
+        file_name=f"folding_ratio_{int(time.time())}.zip",
         mime="application/zip"
     )
 
@@ -485,20 +549,23 @@ if qp:
             for k in range(int(batch_n)):
                 local_rng = make_rng((seed or 0) + k + 1)
                 local_pack = generate_single_fold_question(local_rng, style=style)
-                qid = f"folding_enh_{int(time.time()*1000)}_{k}"
+                qid = f"folding_ratio_{int(time.time()*1000)}_{k}"
 
-                # Separate images
-                pb = io.BytesIO(); local_pack["problem_img"].save(pb, format="PNG")
-                zf.writestr(f"{qid}/problem.png", pb.getvalue())
+                eb = io.BytesIO(); local_pack["example_img"].save(eb, format="PNG")
+                zf.writestr(f"{qid}/example.png", eb.getvalue())
+
+                grid = local_pack["grid_img"]
+                gb = io.BytesIO(); grid.save(gb, format="PNG")
+                zf.writestr(f"{qid}/grid.png", gb.getvalue())
+
+                comp = stack_vertical(local_pack["example_img"], grid, pad=24, bg=style["bg"])
+                qb = io.BytesIO(); comp.save(qb, format="PNG")
+                zf.writestr(f"{qid}/question.png", qb.getvalue())
+
+                labels_ar = local_pack["labels_ar"]
                 for i, im in enumerate(local_pack["choices_imgs"]):
                     cb = io.BytesIO(); im.save(cb, format="PNG")
                     zf.writestr(f"{qid}/choice_{labels_ar[i]}.png", cb.getvalue())
-
-                # Composite
-                grid = compose_2x2_grid(local_pack["choices_imgs"], labels_ar, pad=18, tile_border=2, bg=style["bg"], label_spot="tr")
-                composite = stack_vertical(local_pack["problem_img"], grid, pad=24, bg=style["bg"])
-                qb = io.BytesIO(); composite.save(qb, format="PNG")
-                zf.writestr(f"{qid}/question.png", qb.getvalue())
 
                 meta = {
                     "id": qid,
@@ -509,6 +576,7 @@ if qp:
                     "prompt": local_pack["prompt"],
                     "labels": labels_ar,
                     "correct_label": labels_ar[local_pack["correct_index"]],
+                    "paper_ratio_w_over_h": PAPER_RATIO_W_OVER_H
                 }
                 zf.writestr(f"{qid}/question.json", json.dumps(meta, indent=2, ensure_ascii=False))
                 index.append(meta)
@@ -518,6 +586,6 @@ if qp:
         st.download_button(
             "Download Batch ZIP",
             data=bbuf.getvalue(),
-            file_name=f"batch_folding_enh_{int(time.time())}.zip",
+            file_name=f"batch_folding_ratio_{int(time.time())}.zip",
             mime="application/zip"
         )
