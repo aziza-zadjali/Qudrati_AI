@@ -2,12 +2,12 @@
 # pages/8_folding_challenge.py
 #
 # Paper Folding — Two-Panel Example (Single Fold)
-# Directions fixed to match exam references:
+# EXACT mimic of reference:
 # - Vertical fold: Right → Left  (L)  → landscape paper
 # - Horizontal fold: Bottom → Top (U) → square paper
-# LEFT tile = folded reference (NOW dots the FOLDING half itself).
-# RIGHT tile = plain paper with fold line + arrow that CROSSES the dotted line.
-# Uniform tile size within each question; choices have no extra outer box.
+# LEFT tile: folding half has dotted outer edges (3 sides), fold line at center is SOLID.
+# RIGHT tile: plain paper, center dotted line, large arc arrow crossing the center line.
+# Choices: same paper size as example, no extra outer box.
 
 import io, time, math, random, zipfile, json
 from typing import List, Tuple, Optional, Dict
@@ -136,7 +136,6 @@ def paper_rect_on_canvas(W: int, H: int, ratio: float) -> Tuple[int,int,int,int]
     m = int(0.09 * min(W, H))
     max_w = W - 2*m
     max_h = H - 2*m
-    # try full width first
     pw = max_w
     ph = int(round(pw / ratio))
     if ph > max_h:
@@ -145,6 +144,52 @@ def paper_rect_on_canvas(W: int, H: int, ratio: float) -> Tuple[int,int,int,int]
     l = (W - pw) // 2
     t = (H - ph) // 2
     return (l, t, l + pw, t + ph)
+
+# --- folded half styling: dotted 3 edges + solid fold line at center ---
+def style_folded_edges(draw: ImageDraw.ImageDraw, rect, axis: str, fold_half: str,
+                       paper_fill, outline_color, dotted_color, stroke):
+    l, t, r, b = rect
+    cx = (l + r) // 2
+    cy = (t + b) // 2
+    erase_w = stroke + 4  # override solid border
+
+    if axis == "H":
+        if fold_half == "bottom":
+            # Erase outer edges of bottom half, then redraw dotted
+            draw.line([(l, b), (r, b)], fill=paper_fill, width=erase_w)
+            draw.line([(l, cy), (l, b)], fill=paper_fill, width=erase_w)
+            draw.line([(r, cy), (r, b)], fill=paper_fill, width=erase_w)
+            dotted_line_circles(draw, (l, b), (r, b), dotted_color, dot_r=3, gap=12)
+            dotted_line_circles(draw, (l, cy), (l, b), dotted_color, dot_r=3, gap=12)
+            dotted_line_circles(draw, (r, cy), (r, b), dotted_color, dot_r=3, gap=12)
+            # Solid fold line at center
+            draw.line([(l, cy), (r, cy)], fill=outline_color, width=stroke)
+        else:  # top folding (not used but supported)
+            draw.line([(l, t), (r, t)], fill=paper_fill, width=erase_w)
+            draw.line([(l, t), (l, cy)], fill=paper_fill, width=erase_w)
+            draw.line([(r, t), (r, cy)], fill=paper_fill, width=erase_w)
+            dotted_line_circles(draw, (l, t), (r, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, t), (l, cy), dotted_color, 3, 12)
+            dotted_line_circles(draw, (r, t), (r, cy), dotted_color, 3, 12)
+            draw.line([(l, cy), (r, cy)], fill=outline_color, width=stroke)
+
+    else:  # axis == "V"
+        if fold_half == "right":
+            draw.line([(r, t), (r, b)], fill=paper_fill, width=erase_w)
+            draw.line([(cx, t), (r, t)], fill=paper_fill, width=erase_w)
+            draw.line([(cx, b), (r, b)], fill=paper_fill, width=erase_w)
+            dotted_line_circles(draw, (r, t), (r, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (cx, t), (r, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (cx, b), (r, b), dotted_color, 3, 12)
+            draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
+        else:  # left folding (not used but supported)
+            draw.line([(l, t), (l, b)], fill=paper_fill, width=erase_w)
+            draw.line([(l, t), (cx, t)], fill=paper_fill, width=erase_w)
+            draw.line([(l, b), (cx, b)], fill=paper_fill, width=erase_w)
+            dotted_line_circles(draw, (l, t), (l, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, t), (cx, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, b), (cx, b), dotted_color, 3, 12)
+            draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
 
 # -------------- example (two tiles) ----------------
 def draw_example(direction: str,
@@ -157,7 +202,7 @@ def draw_example(direction: str,
     TW, TH = [d * DPI for d in tile_size]
     pad = int(18 * DPI)
 
-    # Left tile: folded reference (one paper; FOLDING half dotted)  <-- CHANGED
+    # Left tile: folded reference (folding half dotted 3 edges; center fold solid)
     left = Image.new("RGB", (TW, TH), bg)
     pl, pt, pr, pb = paper_rect_on_canvas(TW, TH, ratio)
     ld = ImageDraw.Draw(left)
@@ -165,24 +210,7 @@ def draw_example(direction: str,
     rounded_rect(ld, (pl, pt, pr, pb), 14, paper_fill, outline, 6)
 
     axis, fold_half = dir_to_axis_and_half(direction)
-
-    # dotted the FOLDING half (bottom for U; right for L)
-    def dotted_half(rect, axis, half):
-        l,t,r,b = rect; cx=(l+r)//2; cy=(t+b)//2
-        if axis=="V":
-            box = (l,t,cx,b) if half=="left" else (cx,t,r,b)
-        else:
-            box = (l,t,r,cy) if half=="top" else (l,cy,r,b)
-        x0,y0,x1,y1 = box
-        step = 20
-        for x in range(x0+8, x1-8, step):
-            ld.line([(x,y0+8),(x+8,y0+8)], fill=fold_line_color, width=3)
-            ld.line([(x,y1-8),(x+8,y1-8)], fill=fold_line_color, width=3)
-        for y in range(y0+8, y1-8, step):
-            ld.line([(x0+8,y),(x0+8,y+8)], fill=fold_line_color, width=3)
-            ld.line([(x1-8,y),(x1-8,y+8)], fill=fold_line_color, width=3)
-
-    dotted_half((pl,pt,pr,pb), axis, fold_half)   # <-- dot folding half now
+    style_folded_edges(ld, (pl, pt, pr, pb), axis, fold_half, paper_fill, outline, fold_line_color, 6)
 
     # shapes on the folding half only
     for shp,(sx,sy) in shapes_half:
@@ -203,13 +231,11 @@ def draw_example(direction: str,
 
     if axis == "V":
         dotted_line_circles(rd, (cx, prt + 10), (cx, prb - 10), fold_line_color, dot_r=4, gap=16)
-        # arc spans both halves horizontally
         aL = prl + int(0.06 * Wp); aR = prr - int(0.06 * Wp)
         aT = prt + int(0.18 * Hp); aB = prt + int(0.78 * Hp)
         draw_arc_arrow(rd, (aL, aT, aR, aB), 210, -20, outline, width=6, head_len=18, head_w=12)
     else:
         dotted_line_circles(rd, (prl + 10, cy), (prr - 10, cy), fold_line_color, dot_r=4, gap=16)
-        # arc spans both halves vertically
         aL = prl + int(0.10 * Wp); aR = prr - int(0.10 * Wp)
         aT = prt + int(0.06 * Hp); aB = prb - int(0.06 * Hp)
         draw_arc_arrow(rd, (aL, aT, aR, aB), 160, 340, outline, width=6, head_len=18, head_w=12)
