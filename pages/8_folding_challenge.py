@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 # pages/8_folding_challenge.py
+# Paper Folding — Clear & Large (Single Fold) — Stable version
+# - Single-fold (Left/Right/Up/Down)
+# - Curved arrow + dotted fold line + solid punch
+# - Larger example and choices; example width matches grid width
+# - Arabic prompt (exact) outside images; English UI
+# - Clean export: question.png + JSON (ensure_ascii=False)
 
 import io
 import time
@@ -10,24 +16,23 @@ import json
 from typing import List, Tuple, Optional, Dict
 
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # ----------------------------
-# Utilities
+# Basic utils
 # ----------------------------
 def make_rng(seed: Optional[int]) -> random.Random:
     if seed is None:
         seed = int(time.time() * 1000) % 2147483647
     return random.Random(seed)
 
-def _load_font(font_size: int):
-    try:
-        return ImageFont.truetype("DejaVuSans.ttf", font_size)
-    except Exception:
+def _try_font(size: int):
+    for name in ("DejaVuSans.ttf", "Arial.ttf"):
         try:
-            return ImageFont.truetype("Arial.ttf", font_size)
+            return ImageFont.truetype(name, size)
         except Exception:
-            return ImageFont.load_default()
+            pass
+    return ImageFont.load_default()
 
 def _hex_to_rgb(h):
     try:
@@ -46,138 +51,97 @@ def show_image(img, caption=None):
     except TypeError:
         st.image(img, caption=caption, use_container_width=True)
 
-def resize_max_height(img, max_h: int):
-    """Scale image down to max height (keep aspect)."""
-    if img.height <= max_h or max_h <= 0:
-        return img
-    scale = max_h / img.height
-    new_w = max(1, int(img.width * scale))
-    new_h = max(1, int(img.height * scale))
-    return img.resize((new_w, new_h), Image.LANCZOS)
-
 # ----------------------------
-# Folding math
+# Geometry (single fold)
 # ----------------------------
 def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
     x, y = p
-    if axis == "V":
+    if axis == "V":  # across x=0
         return (-x, y)
-    if axis == "H":
+    if axis == "H":  # across y=0
         return (x, -y)
-    if axis == "D1":
-        return (y, x)
-    if axis == "D2":
-        return (-y, -x)
     return (x, y)
 
-def unfold_points(base_point: Tuple[float, float], folds_axes: List[str]) -> List[Tuple[float, float]]:
-    pts = [base_point]
-    for axis in reversed(folds_axes):
-        mirrored = [reflect_point(p, axis) for p in pts]
-        pts = pts + mirrored
-    out, seen = [], set()
-    for x, y in pts:
-        key = (round(x, 4), round(y, 4))
-        if key not in seen:
-            seen.add(key)
-            out.append((x, y))
-    return out
+def dir_to_axis_and_half(direction: str):
+    """
+    Returns (axis, shaded_half) where shaded_half in {'left','right','top','bottom'}
+    indicates the half that folds over the other BEFORE punching.
+    """
+    if direction == "L":   # fold left: right half folds onto left
+        return "V", "right"
+    if direction == "R":   # fold right: left half folds onto right
+        return "V", "left"
+    if direction == "U":   # fold up: bottom half folds onto top
+        return "H", "bottom"
+    # "D": fold down: top half folds onto bottom
+    return "H", "top"
+
+def norm_to_px(xy, rect):
+    """Map (x,y) in [-1,1] to pixel inside rect=(left,top,right,bottom) with (0,0) at top-left."""
+    x, y = xy
+    left, top, right, bottom = rect
+    px = (x + 1) / 2.0 * (right - left) + left
+    py = (1 - (y + 1) / 2.0) * (bottom - top) + top
+    return px, py
 
 # ----------------------------
 # Drawing helpers
 # ----------------------------
-def _arrow(d: ImageDraw.ImageDraw, start, end, color, width):
-    d.line([start, end], fill=color, width=width)
-    vx, vy = end[0] - start[0], end[1] - start[1]
+def rounded_rect(draw: ImageDraw.ImageDraw, box, radius, fill, outline, width=3):
+    if hasattr(draw, "rounded_rectangle"):
+        draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
+    else:
+        draw.rectangle(box, fill=fill, outline=outline, width=width)
+
+def paper_shadow(base_img: Image.Image, rect, blur=12, offset=(8, 10), opacity=90):
+    l, t, r, b = rect
+    w, h = r - l, b - t
+    shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.rectangle([0, 0, w, h], fill=(0, 0, 0, opacity))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    base_img.paste(shadow, (l + offset[0], t + offset[1]), shadow)
+
+def dotted_line_circles(draw: ImageDraw.ImageDraw, p1, p2, color, dot_r=4, gap=14):
+    x1, y1 = p1
+    x2, y2 = p2
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length <= 0:
+        return
+    steps = max(1, int(length // gap))
+    for i in range(steps + 1):
+        t = i / steps
+        x = x1 + (x2 - x1) * t
+        y = y1 + (y2 - y1) * t
+        draw.ellipse([x - dot_r, y - dot_r, x + dot_r, y + dot_r], fill=color, outline=None)
+
+def draw_arc_arrow(draw: ImageDraw.ImageDraw, bbox, start_deg, end_deg, color, width=8, head_len=26, head_w=16):
+    draw.arc(bbox, start=start_deg, end=end_deg, fill=color, width=width)
+    cx = (bbox[0] + bbox[2]) / 2
+    cy = (bbox[1] + bbox[3]) / 2
+    rx = abs(bbox[2] - bbox[0]) / 2
+    ry = abs(bbox[3] - bbox[1]) / 2
+    t = math.radians(end_deg)
+    tip_x = cx + rx * math.cos(t)
+    tip_y = cy + ry * math.sin(t)
+    vx = -rx * math.sin(t)
+    vy =  ry * math.cos(t)
     L = math.hypot(vx, vy) or 1.0
     ux, uy = vx / L, vy / L
     px, py = -uy, ux
-    head_len = max(12, width * 3)
-    head_w = max(8, width * 2)
-    tip = (end[0], end[1])
-    base = (end[0] - ux * head_len, end[1] - uy * head_len)
-    p1 = (base[0] + px * head_w, base[1] + py * head_w)
-    p2 = (base[0] - px * head_w, base[1] - py * head_w)
-    d.polygon([tip, p1, p2], fill=color)
-
-def draw_fold_icon(direction: str, size=(180, 180),
-                   bg=(255, 255, 255), paper_fill=(250, 250, 250),
-                   outline=(20, 20, 20), stroke=4) -> Image.Image:
-    W, H = size
-    img = Image.new("RGB", size, bg)
-    d = ImageDraw.Draw(img)
-    margin = max(10, int(min(W, H) * 0.1))
-    left, top, right, bottom = margin, margin, W - margin, H - margin
-    d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
-    cx, cy = W // 2, H // 2
-    Llen = max(18, min(W, H) // 3)
-    if direction == "L":
-        start, end = (cx + Llen // 2, cy), (cx - Llen, cy)
-    elif direction == "R":
-        start, end = (cx - Llen // 2, cy), (cx + Llen, cy)
-    elif direction == "U":
-        start, end = (cx, cy + Llen // 2), (cx, cy - Llen)
-    elif direction == "D":
-        start, end = (cx, cy - Llen // 2), (cx, cy + Llen)
-    elif direction == "UL":
-        start, end = (cx + Llen // 2, cy + Llen // 2), (cx - Llen, cy - Llen)
-    elif direction == "UR":
-        start, end = (cx - Llen // 2, cy + Llen // 2), (cx + Llen, cy - Llen)
-    elif direction == "DL":
-        start, end = (cx + Llen // 2, cy - Llen // 2), (cx - Llen, cy + Llen)
-    else:  # "DR"
-        start, end = (cx - Llen // 2, cy - Llen // 2), (cx + Llen, cy + Llen)
-    _arrow(d, start, end, outline, max(3, stroke))
-    return img
-
-def draw_paper_with_holes(size=(420, 420), holes=None,
-                          paper_margin=40, hole_radius=12,
-                          bg=(255, 255, 255), paper_fill=(250, 250, 250),
-                          outline=(20, 20, 20), stroke=5) -> Image.Image:
-    holes = holes or []
-    W, H = size
-    img = Image.new("RGB", size, bg)
-    d = ImageDraw.Draw(img)
-    left, top, right, bottom = paper_margin, paper_margin, W - paper_margin, H - paper_margin
-    d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
-    for (x, y) in holes:
-        px = (x + 1) / 2.0 * (right - left) + left
-        py = (1 - (y + 1) / 2.0) * (bottom - top) + top
-        r = max(5, hole_radius)
-        d.ellipse([px - r, py - r, px + r, py + r], fill=outline, outline=outline, width=1)
-    return img
-
-def draw_folded_with_punch(point_folded: Tuple[float, float], size=(220, 220),
-                           bg=(255, 255, 255), paper_fill=(250, 250, 250),
-                           outline=(20, 20, 20), stroke=4, show_punch_label=False) -> Image.Image:
-    W, H = size
-    img = Image.new("RGB", size, bg)
-    d = ImageDraw.Draw(img)
-    margin = max(10, int(min(W, H) * 0.08))
-    left, top, right, bottom = margin, margin, W - margin, H - margin
-    d.rectangle([left, top, right, bottom], outline=outline, width=stroke, fill=paper_fill)
-    x, y = point_folded
-    px = (x + 1) / 2.0 * (right - left) + left
-    py = (1 - (y + 1) / 2.0) * (bottom - top) + top
-    r = max(6, int(min(W, H)*0.05))
-    d.ellipse([px - r, py - r, px + r, py + r], fill=outline, outline=outline)
-    if show_punch_label:
-        try:
-            font = ImageFont.truetype("DejaVuSans.ttf", 16)
-        except Exception:
-            font = ImageFont.load_default()
-        d.text((left, max(2, top - 20)), "Punch", fill=(20,20,20), font=font)
-    return img
+    base_x = tip_x - ux * head_len
+    base_y = tip_y - uy * head_len
+    p1 = (base_x + px * head_w, base_y + py * head_w)
+    p2 = (base_x - px * head_w, base_y - py * head_w)
+    draw.polygon([(tip_x, tip_y), p1, p2], fill=color)
 
 def overlay_label(img: Image.Image, label: str, spot="tr",
                   circle_fill=(255,255,255), circle_outline=(20,20,20),
-                  text_color=(20,20,20), r: Optional[int]=None) -> Image.Image:
-    """Draw a small labeled circle (أ/ب/ج/د) inside the image."""
+                  text_color=(20,20,20)) -> Image.Image:
     im = img.copy()
     d = ImageDraw.Draw(im)
-    if r is None:
-        r = max(10, int(min(im.size) * 0.08))  # scale with image size
-    margin = max(6, int(min(im.size) * 0.06))
+    r = 18
+    margin = 10
     if spot == "tl":
         cx, cy = margin + r, margin + r
     elif spot == "tr":
@@ -187,23 +151,12 @@ def overlay_label(img: Image.Image, label: str, spot="tr",
     else:  # br
         cx, cy = im.width - margin - r, im.height - margin - r
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=circle_fill, outline=circle_outline, width=2)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", max(12, int(r*1.1)))
-    except Exception:
-        font = ImageFont.load_default()
-    # approximate centering
-    try:
-        tw = d.textlength(label, font=font)
-    except Exception:
-        tw = r
-    th = r  # approx
-    d.text((cx - tw/2, cy - th/2), label, fill=text_color, font=font)
+    font = _try_font(18)
+    tw = d.textlength(label, font=font)
+    d.text((cx - tw/2, cy - 9), label, fill=text_color, font=font)
     return im
 
-def compose_2x2_grid(choices: List[Image.Image], labels: List[str],
-                     pad=14, tile_border=1, bg=(255,255,255),
-                     label_spot="tr") -> Image.Image:
-    """Return a 2x2 grid image with labeled tiles."""
+def compose_2x2_grid(choices, labels, pad=24, tile_border=2, bg=(255,255,255), label_spot="tr"):
     tiles = choices[:4]
     labeled = [overlay_label(tiles[i], labels[i], spot=label_spot) for i in range(4)]
     w, h = labeled[0].size
@@ -213,27 +166,14 @@ def compose_2x2_grid(choices: List[Image.Image], labels: List[str],
     canvas = Image.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(canvas)
     for idx, im in enumerate(labeled):
-        r, c = idx // 2, idx % 2
+        r, c = divmod(idx, 2)
         x = pad + c * (w + pad)
         y = pad + r * (h + pad)
         canvas.paste(im, (x, y))
         d.rectangle([x, y, x + w, y + h], outline=(20,20,20), width=tile_border)
     return canvas
 
-def compose_row(images, pad=10, bg=(255, 255, 255)) -> Image.Image:
-    if not images:
-        return Image.new("RGB", (360, 120), bg)
-    w, h = images[0].size
-    W = len(images) * w + (len(images) + 1) * pad
-    H = h + 2 * pad
-    canvas = Image.new("RGB", (W, H), bg)
-    x = pad
-    for im in images:
-        canvas.paste(im, (x, pad))
-        x += w + pad
-    return canvas
-
-def stack_vertical(top_img: Image.Image, bottom_img: Image.Image, pad=18, bg=(255,255,255)) -> Image.Image:
+def stack_vertical(top_img, bottom_img, pad=28, bg=(255,255,255)):
     W = max(top_img.width, bottom_img.width) + 2*pad
     H = top_img.height + bottom_img.height + 3*pad
     canvas = Image.new("RGB", (W, H), bg)
@@ -244,115 +184,196 @@ def stack_vertical(top_img: Image.Image, bottom_img: Image.Image, pad=18, bg=(25
     return canvas
 
 # ----------------------------
-# Generator
+# Example (folded paper) — larger, clear
 # ----------------------------
-def generate_folding_challenge(rng: random.Random, difficulty="Medium",
-                               allow_diagonal=False, style: Optional[Dict] = None,
-                               show_punch_label=False) -> Dict:
+def draw_example(direction: str, hole_xy_norm: Tuple[float,float],
+                 out_width: int,  # final 1x width in px
+                 bg=(255,255,255), paper_fill=(250,250,250),
+                 outline=(20,20,20), fold_line_color=(60,60,60),
+                 stroke=6, dpi_scale=2) -> Image.Image:
+    # Layout: left = paper block, right = arrow block
+    paper_block_w = int(out_width * 0.64)
+    out_height = int(paper_block_w * 1.2)  # tall enough for clarity
+
+    # Hi-DPI canvas
+    W, H = out_width * dpi_scale, out_height * dpi_scale
+    img = Image.new("RGB", (W, H), bg)
+    d = ImageDraw.Draw(img)
+
+    # Paper rectangle (portrait with margins)
+    margin = int(0.08 * paper_block_w) * dpi_scale
+    left = margin
+    right = paper_block_w * dpi_scale - margin
+    paper_h = int((right - left) * 1.45)  # portrait ~0.69 ratio
+    top = (H - paper_h) // 2
+    bottom = top + paper_h
+    paper_rect = (left, top, right, bottom)
+
+    # Shadow + rounded paper
+    paper_shadow(img, paper_rect, blur=14, offset=(8, 10), opacity=80)
+    rounded_rect(d, paper_rect, radius=18, fill=paper_fill, outline=outline, width=stroke)
+
+    # Fold line (dotted) + shaded half
+    axis, shaded_half = dir_to_axis_and_half(direction)
+    l, t, r, b = paper_rect
+    cx = (l + r) // 2
+    cy = (t + b) // 2
+    if axis == "V":
+        dotted_line_circles(d, (cx, t + 12), (cx, b - 12), fold_line_color, dot_r=4, gap=16)
+    else:
+        dotted_line_circles(d, (l + 12, cy), (r - 12, cy), fold_line_color, dot_r=4, gap=16)
+
+    # Subtle shaded half
+    shade = Image.new("RGBA", (r - l, b - t), (0,0,0,0))
+    sd = ImageDraw.Draw(shade)
+    alpha = 28
+    if axis == "V":
+        if shaded_half == "left":
+            sd.rectangle([0, 0, (cx - l), b - t], fill=(0,0,0,alpha))
+        else:
+            sd.rectangle([(cx - l), 0, r - l, b - t], fill=(0,0,0,alpha))
+    else:
+        if shaded_half == "top":
+            sd.rectangle([0, 0, r - l, (cy - t)], fill=(0,0,0,alpha))
+        else:
+            sd.rectangle([0, (cy - t), r - l, b - t], fill=(0,0,0,alpha))
+    img.paste(shade, (l, t), shade)
+
+    # Punch (solid)
+    hx, hy = norm_to_px(hole_xy_norm, paper_rect)
+    pr = 14
+    d.ellipse([hx - pr, hy - pr, hx + pr, hy + pr], fill=outline, outline=outline)
+
+    # Curved arrow (in right block)
+    arrow_left = paper_block_w * dpi_scale + 10
+    arrow_right = out_width * dpi_scale - 10
+    arc_hh = int((b - t) * 0.45)
+    arc_top = cy - arc_hh
+    arc_bottom = cy + arc_hh
+
+    if axis == "V":
+        start, end = (-20, 215) if direction == "L" else (200, -20)
+        draw_arc_arrow(d, (arrow_left, arc_top, arrow_right, arc_bottom),
+                       start, end, outline, width=8, head_len=26, head_w=16)
+    else:
+        arc_left = (l + r)//2 - (arrow_right - arrow_left)//3
+        arc_right = (l + r)//2 + (arrow_right - arrow_left)//3
+        arc_top2 = b + 24
+        arc_bottom2 = arc_top2 + (arc_bottom - arc_top)
+        start, end = (160, 342) if direction == "U" else (-20, 160)
+        draw_arc_arrow(d, (arc_left, arc_top2, arc_right, arc_bottom2),
+                       start, end, outline, width=8, head_len=26, head_w=16)
+
+    # Downsample
+    if dpi_scale != 1:
+        img = img.resize((out_width, out_height), Image.LANCZOS)
+    return img
+
+# ----------------------------
+# Unfolded choices — large portrait tiles
+# ----------------------------
+def draw_choice(holes_norm: List[Tuple[float,float]],
+                tile_size=(440, 560),  # larger tiles for clarity
+                bg=(255,255,255), paper_fill=(250,250,250),
+                outline=(20,20,20), stroke=6, dpi_scale=2) -> Image.Image:
+    W, H = tile_size[0]*dpi_scale, tile_size[1]*dpi_scale
+    img = Image.new("RGB", (W, H), bg)
+    d = ImageDraw.Draw(img)
+
+    # Paper rectangle with margins (portrait)
+    margin = int(0.10 * W)
+    left = margin
+    right = W - margin
+    paper_h = int((right - left) * 1.45)  # same look as example
+    top = max(20, (H - paper_h) // 2)
+    bottom = top + paper_h
+    paper_rect = (left, top, right, bottom)
+
+    paper_shadow(img, paper_rect, blur=12, offset=(6, 8), opacity=80)
+    rounded_rect(d, paper_rect, radius=16, fill=paper_fill, outline=outline, width=stroke)
+
+    r = 14
+    for (x, y) in holes_norm:
+        px, py = norm_to_px((x, y), paper_rect)
+        d.ellipse([px - r, py - r, px + r, py + r], fill=outline, outline=outline)
+
+    if dpi_scale != 1:
+        img = img.resize(tile_size, Image.LANCZOS)
+    return img
+
+# ----------------------------
+# Question generator (single fold)
+# ----------------------------
+def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None) -> Dict:
     bg = (style.get("bg") if style else None) or (255, 255, 255)
     paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
     outline = (style.get("outline") if style else None) or (20, 20, 20)
-    stroke = (style.get("stroke_width") if style else None) or 4
+    fold_line_color = (style.get("fold_line") if style else None) or (60, 60, 60)
+    stroke = (style.get("stroke_width") if style else None) or 6
+    dpi_scale = int((style.get("dpi_scale") if style else None) or 2)
 
-    # Compact sizes (from style)
-    icon_size = style.get("icon_size", (180, 180))
-    punch_size = style.get("punch_size", (220, 220))
-    choice_size = style.get("choice_size", (420, 420))
-    paper_margin = style.get("paper_margin", 40)
-    hole_radius = style.get("hole_radius", 12)
-    row_pad = style.get("row_pad", 16)
+    direction = rng.choice(["L", "R", "U", "D"])
+    axis, _ = dir_to_axis_and_half(direction)
 
-    if difficulty == "Easy":
-        n_folds = rng.choice([1, 2])
-    elif difficulty == "Hard":
-        n_folds = 3
-    else:
-        n_folds = rng.choice([2, 3])
+    # Keep punch away from edges & fold axis for clarity
+    def safe_rand():
+        return rng.uniform(-0.68, 0.68)
+    px = safe_rand()
+    py = safe_rand()
+    if axis == "V" and abs(px) < 0.12:
+        px = 0.12 * (1 if px >= 0 else -1)
+    if axis == "H" and abs(py) < 0.12:
+        py = 0.12 * (1 if py >= 0 else -1)
+    p_folded = (px, py)
+    p_reflected = reflect_point(p_folded, axis)
 
-    dirs_card = ["L", "R", "U", "D"]
-    dirs_diag = ["UL", "UR", "DL", "DR"]
-    dirs_all = dirs_card + (dirs_diag if allow_diagonal else [])
-    folds = []
-    for i in range(n_folds):
-        cand = rng.choice(dirs_all) if i == 0 else rng.choice([d for d in dirs_all if d != folds[-1]])
-        folds.append(cand)
-
-    def dir_to_axis(d):
-        if d in ("L", "R"): return "V"
-        if d in ("U", "D"): return "H"
-        if d in ("UL", "DR"): return "D1"
-        return "D2"
-
-    axes = [dir_to_axis(d) for d in folds]
-
-    px = rng.uniform(-0.65, 0.65)
-    py = rng.uniform(-0.65, 0.65)
-    point_folded = (px, py)
-
-    holes = unfold_points(point_folded, axes)
-
-    # Visuals (use compact sizes)
-    icons = [draw_fold_icon(d, size=icon_size, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke) for d in folds]
-    row = compose_row(icons, pad=row_pad, bg=bg)
-    punch = draw_folded_with_punch(point_folded, size=punch_size, bg=bg, paper_fill=paper_fill, outline=outline, stroke=stroke, show_punch_label=show_punch_label)
-
-    W = max(row.size[0], punch.size[0]) + 24
-    H = row.size[1] + punch.size[1] + 40
-    problem = Image.new("RGB", (W, H), bg)
-    x1 = (W - row.size[0]) // 2
-    problem.paste(row, (x1, 12))
-    x2 = (W - punch.size[0]) // 2
-    problem.paste(punch, (x2, row.size[1] + 24))
-
-    # Choices
-    def mk_choice(holes_pts):
-        return draw_paper_with_holes(size=choice_size, holes=holes_pts, bg=bg, paper_fill=paper_fill,
-                                     outline=outline, stroke=stroke, paper_margin=paper_margin, hole_radius=hole_radius)
-
-    correct = mk_choice(holes)
-    holes_d1 = unfold_points(point_folded, axes[:-1]) if len(axes) > 0 else [(px, py)]
-    d1 = mk_choice(holes_d1)
-
-    if len(axes) > 0:
-        wrong_axes = axes.copy()
-        idx = rng.randrange(len(wrong_axes))
-        wrong_axes[idx] = "H" if wrong_axes[idx] == "V" else ("V" if wrong_axes[idx] == "H" else ("D2" if wrong_axes[idx] == "D1" else "D1"))
-        holes_d2 = unfold_points(point_folded, wrong_axes)
-    else:
-        holes_d2 = [(-px, py)]
-    d2 = mk_choice(holes_d2)
-
-    d3 = correct.rotate(90, expand=False)
+    # Build choices (large tiles)
+    choice_size = (440, 560)
+    correct = draw_choice([p_folded, p_reflected], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
+    d1 = draw_choice([p_folded], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
+    wrong_axis = "H" if axis == "V" else "V"
+    d2 = draw_choice([p_folded, reflect_point(p_folded, wrong_axis)], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
+    rot = lambda pt: (pt[1], -pt[0])
+    d3 = draw_choice([rot(p_folded), rot(p_reflected)], choice_size, bg, paper_fill, outline, stroke, dpi_scale)
 
     choices = [correct, d1, d2, d3]
     rng.shuffle(choices)
-    answer_index = choices.index(correct)
+    correct_index = choices.index(correct)
+
+    # Compose grid to get width, then example with the same width
+    labels_ar = ["أ", "ب", "ج", "د"]
+    grid = compose_2x2_grid(choices, labels_ar, pad=24, tile_border=2, bg=bg, label_spot="tr")
+    example = draw_example(direction, p_folded, out_width=grid.width,
+                           bg=bg, paper_fill=paper_fill, outline=outline,
+                           fold_line_color=fold_line_color, stroke=stroke, dpi_scale=dpi_scale)
 
     prompt_ar = "ما رمز البديل الذي يحتوي على صورة الورقة بعد إعادة فتحها من بين البدائل الأربعة؟"
-    rule_desc_ar = "عند فتح كل طية، تنعكس مواضع الثقوب عبر خط الطي."
+    meta = {
+        "type": "folding_single",
+        "direction": direction,
+        "axis": axis,
+        "punch": (round(px, 3), round(py, 3))
+    }
 
+    # Return problem_img for compatibility (avoid KeyError)
     return {
-        "problem_img": problem,
+        "problem_img": example,      # <- use this everywhere in UI
         "choices_imgs": choices,
-        "correct_index": answer_index,
+        "correct_index": correct_index,
+        "labels_ar": labels_ar,
         "prompt": prompt_ar,
-        "rule_desc": rule_desc_ar,
-        "meta": {"type": "folding", "folds": folds, "axes": axes, "punch": (round(px,3), round(py,3))}
+        "meta": meta
     }
 
 # ----------------------------
-# Streamlit UI (Arabic)
+# Streamlit UI (English UI, Arabic prompt)
 # ----------------------------
-st.set_page_config(page_title="تحدي طي الورقة", layout="wide")
-st.title("تحدي طي الورقة")
+st.set_page_config(page_title="Paper Folding — Clear & Large", layout="wide")
+st.title("Paper Folding — Clear & Large (Single Fold)")
 
 with st.sidebar:
-    st.header("التحكم")
-    diff_map = {"سهل": "Easy", "متوسط": "Medium", "صعب": "Hard"}
-    diff_choice = st.select_slider("مستوى الصعوبة", options=list(diff_map.keys()), value="متوسط")
-    difficulty = diff_map[diff_choice]
-
-    seed_str = st.text_input("البذرة (اختياري)", value="")
+    st.header("Controls")
+    seed_str = st.text_input("Seed (optional)", value="")
     seed = None
     if seed_str.strip():
         try:
@@ -360,74 +381,34 @@ with st.sidebar:
         except Exception:
             seed = abs(hash(seed_str)) % (2**31)
 
-    allow_diag = st.checkbox("السماح بالطيات القطرية", value=False)
-
-    st.header("التنسيق البصري")
-    bg_hex = st.text_input("لون الخلفية", "#FFFFFF")
-    paper_hex = st.text_input("لون الورقة", "#FAFAFA")
-    outline_hex = st.text_input("لون الحدود", "#141414")
-    stroke_w = st.number_input("سماكة إطار الورقة (px)", min_value=2, max_value=12, value=4, step=1,
-                               help="السُمك بالبيكسل للحدود المرسومة حول الورقة/العناصر")
-
-    # 🔽 جديد: وضع مدمج + ارتفاع أقصى للصورة المركبة
-    compact_mode = st.toggle("وضع مدمج (تصغير تلقائي بلا تمرير)", value=True)
-    max_height_px = st.slider("الارتفاع الأقصى للصورة المركبة (px)", min_value=400, max_value=900, value=620, step=10)
-
-    # نمط مرجعي (شبكة 2×2 + حروف داخل الصور + نقطة فقط للثقب)
-    reference_mode = st.toggle("مطابقة النمط المرجعي (شبكة 2×2 + حروف داخل الصور + نقطة فقط للثقب)", value=True)
-
-    # تعيين أحجام مدمجة
-    if compact_mode:
-        icon_size   = (96, 96)
-        punch_size  = (160, 160)
-        choice_size = (160, 160)
-        paper_margin = 26
-        hole_radius  = 8
-        row_pad      = 10
-        grid_pad     = 14
-        tile_border  = 1
-    else:
-        icon_size   = (180, 180)
-        punch_size  = (220, 220)
-        choice_size = (420, 420)
-        paper_margin = 40
-        hole_radius  = 12
-        row_pad      = 16
-        grid_pad     = 18
-        tile_border  = 2
-
-    style = {
-        "bg": _hex_to_rgb(bg_hex),
-        "paper_fill": _hex_to_rgb(paper_hex),
-        "outline": _hex_to_rgb(outline_hex),
-        "stroke_width": int(stroke_w),
-        # Sizes
-        "icon_size": icon_size,
-        "punch_size": punch_size,
-        "choice_size": choice_size,
-        "paper_margin": paper_margin,
-        "hole_radius": hole_radius,
-        "row_pad": row_pad,
-        "grid_pad": grid_pad,
-        "tile_border": tile_border,
-        "max_height": max_height_px,
-    }
+    st.header("Visual Style")
+    bg_hex = st.text_input("Background", "#FFFFFF")
+    paper_hex = st.text_input("Paper fill", "#FAFAFA")
+    outline_hex = st.text_input("Outline", "#1A1A1A")
+    fold_line_hex = st.text_input("Fold-line (dots)", "#3C3C3C")
+    stroke_w = st.number_input("Paper border thickness (px)", min_value=2, max_value=12, value=6, step=1)
+    dpi_scale = st.slider("Quality (internal render scale)", min_value=1, max_value=3, value=2)
 
     st.markdown("---")
-    gen_btn = st.button("إنشاء سؤال جديد", type="primary", use_container_width=True)
+    gen_btn = st.button("Generate New Question", type="primary", use_container_width=True)
 
-    st.subheader("إنشاء مجموعة (Batch)")
-    batch_n = st.number_input("عدد الأسئلة في المجموعة", min_value=2, max_value=100, value=10, step=1)
-    batch_btn = st.button("إنشاء ملف ZIP للمجموعة", use_container_width=True)
+    st.subheader("Batch")
+    batch_n = st.number_input("How many?", min_value=2, max_value=100, value=8, step=1)
+    batch_btn = st.button("Generate Batch ZIP", use_container_width=True)
+
+style = {
+    "bg": _hex_to_rgb(bg_hex),
+    "paper_fill": _hex_to_rgb(paper_hex),
+    "outline": _hex_to_rgb(outline_hex),
+    "fold_line": _hex_to_rgb(fold_line_hex),
+    "stroke_width": int(stroke_w),
+    "dpi_scale": int(dpi_scale),
+}
 
 rng = make_rng(seed)
-labels_ar = ["أ", "ب", "ج", "د"]
 
 def make_one():
-    return generate_folding_challenge(
-        rng, difficulty=difficulty, allow_diagonal=allow_diag, style=style,
-        show_punch_label=not reference_mode  # في النمط المرجعي نخفي النص ونضع نقطة فقط
-    )
+    return generate_single_fold_question(rng, style=style)
 
 if ("fold_qpack" not in st.session_state) or gen_btn:
     st.session_state.fold_qpack = make_one()
@@ -435,80 +416,60 @@ if ("fold_qpack" not in st.session_state) or gen_btn:
 qp = st.session_state.get("fold_qpack")
 
 if qp:
-    if reference_mode:
-        grid = compose_2x2_grid(qp["choices_imgs"], labels_ar,
-                                pad=style["grid_pad"], tile_border=style["tile_border"],
-                                bg=style["bg"], label_spot="tr")
-        composite = stack_vertical(qp["problem_img"], grid, pad=18 if style["row_pad"] <= 10 else 22, bg=style["bg"])
-        # 🔽 جديد: تصغير تلقائي لارتفاع أقصى
-        composite = resize_max_height(composite, style.get("max_height", 620))
-        st.subheader("السؤال")
-        st.write(qp["prompt"])
-        show_image(composite)
-    else:
-        colQ, colA = st.columns([2.1, 1.4])
-        with colQ:
-            st.subheader("السؤال")
-            show_image(resize_max_height(qp["problem_img"], style.get("max_height", 620)))
-            st.write(qp["prompt"])
-        with colA:
-            st.subheader("البدائل")
-            cols2 = st.columns(2)
-            for i, im in enumerate(qp["choices_imgs"]):
-                with cols2[i % 2]:
-                    im_small = resize_max_height(im, 300 if style["choice_size"][0] > 200 else 200)
-                    show_image(overlay_label(im_small, labels_ar[i]), caption=f"{labels_ar[i]}")
+    # Build grid now (always available in UI)
+    grid = compose_2x2_grid(qp["choices_imgs"], qp["labels_ar"], pad=24, tile_border=2, bg=style["bg"], label_spot="tr")
+    # Compose final question image (example above + grid below)
+    composite = stack_vertical(qp["problem_img"], grid, pad=28, bg=style["bg"])
 
-    # اختيار الإجابة
-    chosen = st.radio("اختر الإجابة:", labels_ar, index=0, horizontal=True)
-    if st.button("تحقق من الإجابة"):
-        if chosen == labels_ar[qp["correct_index"]]:
-            st.success(f"صحيح. الإجابة: {labels_ar[qp['correct_index']]}")
+    st.subheader("Question")
+    # Exact Arabic text outside images for correct rendering
+    st.write(qp["prompt"])
+    show_image(composite)
+
+    chosen = st.radio("Pick your answer:", qp["labels_ar"], index=0, horizontal=True)
+    if st.button("Check answer"):
+        if chosen == qp["labels_ar"][qp["correct_index"]]:
+            st.success(f"Correct. Answer: {qp['labels_ar'][qp['correct_index']]}")
         else:
-            st.error(f"غير صحيح. الإجابة الصحيحة: {labels_ar[qp['correct_index']]}")
-        st.markdown("**القاعدة:** " + qp["rule_desc"])
+            st.error(f"Not quite. Correct answer: {qp['labels_ar'][qp['correct_index']]}")
 
     st.markdown("---")
-    st.subheader("تصدير")
+    st.subheader("Export")
 
-    # تحضير التصدير: صورة مركبة + ملفات منفصلة + JSON
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # صور منفصلة
+        # Save example (problem)
         pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG")
         zf.writestr("problem.png", pb.getvalue())
+
+        # Save choices (with labels in filenames)
         for i, im in enumerate(qp["choices_imgs"]):
             cb = io.BytesIO(); im.save(cb, format="PNG")
-            zf.writestr(f"choice_{labels_ar[i]}.png", cb.getvalue())
+            zf.writestr(f"choice_{qp['labels_ar'][i]}.png", cb.getvalue())
 
-        # صورة مركبة مُصغّرة للارتفاع المحدد
-        grid = compose_2x2_grid(qp["choices_imgs"], labels_ar,
-                                pad=style["grid_pad"], tile_border=style["tile_border"],
-                                bg=style["bg"], label_spot="tr")
-        composite = stack_vertical(qp["problem_img"], grid, pad=18 if style["row_pad"] <= 10 else 22, bg=style["bg"])
-        composite = resize_max_height(composite, style.get("max_height", 620))
+        # Save grid and composite
+        gb = io.BytesIO(); grid.save(gb, format="PNG")
+        zf.writestr("grid.png", gb.getvalue())
+
         qb = io.BytesIO(); composite.save(qb, format="PNG")
         zf.writestr("question.png", qb.getvalue())
 
-        # ميتاداتا
+        # Metadata (Arabic preserved)
         meta = {
             "type": qp["meta"]["type"],
-            "folds": qp["meta"]["folds"],
-            "axes": qp["meta"]["axes"],
+            "direction": qp["meta"]["direction"],
+            "axis": qp["meta"]["axis"],
             "punch": qp["meta"]["punch"],
             "prompt": qp["prompt"],
-            "labels": labels_ar,
-            "correct_label": labels_ar[qp["correct_index"]],
-            "rule": qp["rule_desc"],
-            "compact_mode": True,
-            "max_height_px": style.get("max_height", 620),
+            "labels": qp["labels_ar"],
+            "correct_label": qp["labels_ar"][qp["correct_index"]],
         }
         zf.writestr("question.json", json.dumps(meta, indent=2, ensure_ascii=False))
 
     st.download_button(
-        "تنزيل ملف ZIP",
+        "Download ZIP",
         data=buf.getvalue(),
-        file_name=f"folding_{int(time.time())}.zip",
+        file_name=f"folding_clear_{int(time.time())}.zip",
         mime="application/zip"
     )
 
@@ -518,39 +479,36 @@ if qp:
             index = []
             for k in range(int(batch_n)):
                 local_rng = make_rng((seed or 0) + k + 1)
-                local_pack = generate_folding_challenge(
-                    local_rng, difficulty=difficulty, allow_diagonal=allow_diag, style=style,
-                    show_punch_label=not reference_mode)
-                qid = f"folding_{int(time.time()*1000)}_{k}"
+                local_pack = generate_single_fold_question(local_rng, style=style)
+                qid = f"folding_clear_{int(time.time()*1000)}_{k}"
 
-                # separate images
+                # Rebuild grid & composite for each item
+                local_grid = compose_2x2_grid(local_pack["choices_imgs"], local_pack["labels_ar"], pad=24, tile_border=2, bg=style["bg"], label_spot="tr")
+                local_composite = stack_vertical(local_pack["problem_img"], local_grid, pad=28, bg=style["bg"])
+
+                # Write files
                 pb = io.BytesIO(); local_pack["problem_img"].save(pb, format="PNG")
                 zf.writestr(f"{qid}/problem.png", pb.getvalue())
+
                 for i, im in enumerate(local_pack["choices_imgs"]):
                     cb = io.BytesIO(); im.save(cb, format="PNG")
-                    zf.writestr(f"{qid}/choice_{labels_ar[i]}.png", cb.getvalue())
+                    zf.writestr(f"{qid}/choice_{local_pack['labels_ar'][i]}.png", cb.getvalue())
 
-                # composite question.png (scaled)
-                grid = compose_2x2_grid(local_pack["choices_imgs"], labels_ar,
-                                        pad=style["grid_pad"], tile_border=style["tile_border"],
-                                        bg=style["bg"], label_spot="tr")
-                composite = stack_vertical(local_pack["problem_img"], grid, pad=18 if style["row_pad"] <= 10 else 22, bg=style["bg"])
-                composite = resize_max_height(composite, style.get("max_height", 620))
-                qb = io.BytesIO(); composite.save(qb, format="PNG")
+                gb = io.BytesIO(); local_grid.save(gb, format="PNG")
+                zf.writestr(f"{qid}/grid.png", gb.getvalue())
+
+                qb = io.BytesIO(); local_composite.save(qb, format="PNG")
                 zf.writestr(f"{qid}/question.png", qb.getvalue())
 
                 meta = {
                     "id": qid,
                     "type": local_pack["meta"]["type"],
-                    "folds": local_pack["meta"]["folds"],
-                    "axes": local_pack["meta"]["axes"],
+                    "direction": local_pack["meta"]["direction"],
+                    "axis": local_pack["meta"]["axis"],
                     "punch": local_pack["meta"]["punch"],
                     "prompt": local_pack["prompt"],
-                    "labels": labels_ar,
-                    "correct_label": labels_ar[local_pack["correct_index"]],
-                    "rule": local_pack["rule_desc"],
-                    "compact_mode": True,
-                    "max_height_px": style.get("max_height", 620),
+                    "labels": local_pack["labels_ar"],
+                    "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
                 }
                 zf.writestr(f"{qid}/question.json", json.dumps(meta, indent=2, ensure_ascii=False))
                 index.append(meta)
@@ -558,8 +516,8 @@ if qp:
             zf.writestr("index.json", json.dumps(index, indent=2, ensure_ascii=False))
 
         st.download_button(
-            "تنزيل ملف ZIP للمجموعة",
+            "Download Batch ZIP",
             data=bbuf.getvalue(),
-            file_name=f"batch_folding_{int(time.time())}.zip",
+            file_name=f"batch_folding_clear_{int(time.time())}.zip",
             mime="application/zip"
         )
