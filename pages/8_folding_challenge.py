@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
 # pages/8_folding_challenge.py
-
+#
 # Paper Folding — Two-Panel Example (Single Fold)
+# - Horizontal: Bottom → Top (U)  → square paper
+# - Vertical:   Right  → Left (L) → landscape paper
 # LEFT tile: folding half has dotted outer edges (3 sides); center fold line is SOLID.
-# Shapes are drawn on the VISIBLE (non-dotted) half.
-# RIGHT tile: plain paper, center dotted line, big curved arrow that crosses the line.
-# Choices: ONLY the mirrored (reflected) shapes are shown; the right reflection is the right answer.
+#            Shapes are drawn on the VISIBLE (non-dotted) half.
+# RIGHT tile: plain paper, center dotted line, big curved arrow that CROSSES the line.
+# Choices: the correct option is a TRUE MIRROR of the visible-half shapes across the fold axis.
+#          We guarantee uniqueness so one choice is always correct.
+# Compact visuals so the page stays tidy.
 
 import io, time, math, random, zipfile, json
 from typing import List, Tuple, Optional, Dict
+
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-# -------------------------- Config --------------------------
-DPI = 2                 # render scale for crisp lines
-DISPLAY_WIDTH = 680     # page render width for the composite
+# ---------------- Config ----------------
+DPI = 2                       # internal render scale for crisp lines
+DISPLAY_WIDTH = 680           # page render width for the composite (smaller = more compact)
 
-# -------------------------- utils --------------------------
+# ---------------- utils ----------------
 def make_rng(seed: Optional[int]) -> random.Random:
     if seed is None:
         seed = int(time.time() * 1000) % 2147483647
@@ -41,6 +46,11 @@ def _hex_to_rgb(h):
     except:
         return (255, 255, 255)
 
+# normalized coordinate mirror (positions only)
+def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
+    x, y = p
+    return (-x, y) if axis == "V" else (x, -y)
+
 def dir_to_axis_and_half(direction: str):
     if direction == "L":  # right → left
         return "V", "right"
@@ -49,14 +59,13 @@ def dir_to_axis_and_half(direction: str):
     raise ValueError("Direction must be 'L' or 'U'.")
 
 def norm_to_px(xy, rect):
-    # Map normalized (-1..1) to canvas pixels (rect)
     x, y = xy
     l, t, r, b = rect
     px = (x + 1) / 2 * (r - l) + l
     py = (1 - (y + 1) / 2) * (b - t) + t
     return px, py
 
-# -------------------------- drawing helpers --------------------------
+# ---------------- drawing helpers ----------------
 def rounded_rect(draw, box, radius, fill, outline, width=3):
     if hasattr(draw, "rounded_rectangle"):
         draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
@@ -99,10 +108,8 @@ def draw_arc_arrow(draw, bbox, start_deg, end_deg, color, width=6, head_len=18, 
     px, py = -uy, ux
     bx = tip_x - ux * head_len
     by = tip_y - uy * head_len
-    draw.polygon([(tip_x, tip_y),
-                  (bx + px * head_w, by + py * head_w),
-                  (bx - px * head_w, by - py * head_w)],
-                 fill=color)
+    draw.polygon([(tip_x, tip_y), (bx + px * head_w, by + py * head_w),
+                  (bx - px * head_w, by - py * head_w)], fill=color)
 
 def draw_shape_outline(draw, center, size, shape, color, width):
     cx, cy = center
@@ -111,19 +118,20 @@ def draw_shape_outline(draw, center, size, shape, color, width):
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=width)
     elif shape == "triangle":
         s = size * 1.6
-        p1 = (cx,         cy - s * 0.9)
-        p2 = (cx - s,     cy + s * 0.9)
-        p3 = (cx + s,     cy + s * 0.9)
-        draw.line([p1, p2, p3, p1], fill=color, width=width)
-    else:  # square
+        p1 = (cx, cy - s * 0.9)
+        p2 = (cx - s, cy + s * 0.9)
+        p3 = (cx + s, cy + s * 0.9)
+        draw.line([p1, p2, p3, p1], fill=color, width=width, joint="curve")
+    else:
         s = size * 1.4
         draw.rectangle([cx - s, cy - s, cx + s, cy + s], outline=color, width=width)
 
-# -------------------------- adaptive canvas/paper --------------------------
+# ---------------- adaptive canvas/paper ----------------
 def get_tile_size(axis: str) -> Tuple[int, int]:
-    if axis == "V":    # landscape when vertical fold
+    """Smaller tiles for a compact page layout."""
+    if axis == "V":     # landscape like Example (2)
         return (340, 140)
-    else:              # square when horizontal fold
+    else:               # square like Example (1)
         return (220, 220)
 
 def paper_rect_on_canvas(W: int, H: int, ratio: float) -> Tuple[int, int, int, int]:
@@ -152,37 +160,37 @@ def style_folded_edges(draw: ImageDraw.ImageDraw, rect, axis: str, fold_half: st
             draw.line([(l, b), (r, b)], fill=paper_fill, width=erase_w)
             draw.line([(l, cy), (l, b)], fill=paper_fill, width=erase_w)
             draw.line([(r, cy), (r, b)], fill=paper_fill, width=erase_w)
-            dotted_line_circles(draw, (l, b), (r, b), dotted_color, 4, 16)
-            dotted_line_circles(draw, (l, cy), (l, b), dotted_color, 4, 16)
-            dotted_line_circles(draw, (r, cy), (r, b), dotted_color, 4, 16)
-            draw.line([(l, cy), (r, cy)], fill=outline_color, width=stroke)
+            dotted_line_circles(draw, (l, b), (r, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, cy), (l, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (r, cy), (r, b), dotted_color, 3, 12)
+            draw.line([(l, cy), (r, cy)], fill=outline_color, width=stroke)  # center solid
         else:
             draw.line([(l, t), (r, t)], fill=paper_fill, width=erase_w)
             draw.line([(l, t), (l, cy)], fill=paper_fill, width=erase_w)
             draw.line([(r, t), (r, cy)], fill=paper_fill, width=erase_w)
-            dotted_line_circles(draw, (l, t), (r, t), dotted_color, 4, 16)
-            dotted_line_circles(draw, (l, t), (l, cy), dotted_color, 4, 16)
-            dotted_line_circles(draw, (r, t), (r, cy), dotted_color, 4, 16)
+            dotted_line_circles(draw, (l, t), (r, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, t), (l, cy), dotted_color, 3, 12)
+            dotted_line_circles(draw, (r, t), (r, cy), dotted_color, 3, 12)
             draw.line([(l, cy), (r, cy)], fill=outline_color, width=stroke)
     else:  # axis == "V"
         if fold_half == "right":
             draw.line([(r, t), (r, b)], fill=paper_fill, width=erase_w)
             draw.line([(cx, t), (r, t)], fill=paper_fill, width=erase_w)
             draw.line([(cx, b), (r, b)], fill=paper_fill, width=erase_w)
-            dotted_line_circles(draw, (r, t), (r, b), dotted_color, 4, 16)
-            dotted_line_circles(draw, (cx, t), (r, t), dotted_color, 4, 16)
-            dotted_line_circles(draw, (cx, b), (r, b), dotted_color, 4, 16)
+            dotted_line_circles(draw, (r, t), (r, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (cx, t), (r, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (cx, b), (r, b), dotted_color, 3, 12)
             draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
         else:
             draw.line([(l, t), (l, b)], fill=paper_fill, width=erase_w)
             draw.line([(l, t), (cx, t)], fill=paper_fill, width=erase_w)
             draw.line([(l, b), (cx, b)], fill=paper_fill, width=erase_w)
-            dotted_line_circles(draw, (l, t), (l, b), dotted_color, 4, 16)
-            dotted_line_circles(draw, (l, t), (cx, t), dotted_color, 4, 16)
-            dotted_line_circles(draw, (l, b), (cx, b), dotted_color, 4, 16)
+            dotted_line_circles(draw, (l, t), (l, b), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, t), (cx, t), dotted_color, 3, 12)
+            dotted_line_circles(draw, (l, b), (cx, b), dotted_color, 3, 12)
             draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
 
-# -------------------------- example (two tiles) --------------------------
+# -------------- example (two tiles) ----------------
 def draw_example(direction: str,
                  shapes_visible: List[Tuple[str, Tuple[float, float]]],
                  tile_size: Tuple[int, int],
@@ -193,7 +201,7 @@ def draw_example(direction: str,
     TW, TH = [d * DPI for d in tile_size]
     pad = int(16 * DPI)
 
-    # Left tile: folded reference
+    # Left tile
     left = Image.new("RGB", (TW, TH), bg)
     pl, pt, pr, pb = paper_rect_on_canvas(TW, TH, ratio)
     ld = ImageDraw.Draw(left)
@@ -201,14 +209,15 @@ def draw_example(direction: str,
     rounded_rect(ld, (pl, pt, pr, pb), 14, paper_fill, outline, 6)
 
     axis, fold_half = dir_to_axis_and_half(direction)
-    style_folded_edges(ld, (pl, pt, pr, pb), axis, fold_half, paper_fill, outline, fold_line_color, 6)
+    style_folded_edges(ld, (pl, pt, pr, pb), axis, fold_half,
+                       paper_fill, outline, fold_line_color, 6)
 
-    # shapes on the VISIBLE half only
+    # shapes on the VISIBLE (non-dotted) half
     for shp, (sx, sy) in shapes_visible:
         px, py = norm_to_px((sx, sy), (pl, pt, pr, pb))
         draw_shape_outline(ld, (px, py), size=10 * DPI, shape=shp, color=outline, width=5)
 
-    # Right tile: plain paper + dotted center + big arrow crossing
+    # Right tile
     right = Image.new("RGB", (TW, TH), bg)
     prl, prt, prr, prb = paper_rect_on_canvas(TW, TH, ratio)
     rd = ImageDraw.Draw(right)
@@ -221,42 +230,49 @@ def draw_example(direction: str,
     Hp = prb - prt
 
     if axis == "V":
-        dotted_line_circles(rd, (cx, prt + 10), (cx, prb - 10), fold_line_color, dot_r=5, gap=18)
-        aL = prl + int(0.08 * Wp); aR = prr - int(0.04 * Wp)
-        aT = prt + int(0.15 * Hp); aB = prt + int(0.85 * Hp)
-        draw_arc_arrow(rd, (aL, aT, aR, aB), -25, 180, outline, width=7, head_len=22, head_w=14)
+        dotted_line_circles(rd, (cx, prt + 10), (cx, prb - 10), fold_line_color, dot_r=4, gap=16)
+        # Arrow head pointing LEFT (→ fold right→left).
+        aL = prl + int(0.06 * Wp); aR = prr - int(0.06 * Wp)
+        aT = prt + int(0.18 * Hp); aB = prt + int(0.78 * Hp)
+        draw_arc_arrow(rd, (aL, aT, aR, aB), -30, 180, outline, width=6, head_len=18, head_w=12)
     else:
-        dotted_line_circles(rd, (prl + 10, cy), (prr - 10, cy), fold_line_color, dot_r=5, gap=18)
+        dotted_line_circles(rd, (prl + 10, cy), (prr - 10, cy), fold_line_color, dot_r=4, gap=16)
+        # Arrow head pointing UP (→ fold bottom→top).
         aL = prl + int(0.12 * Wp); aR = prr - int(0.12 * Wp)
-        aT = prt + int(0.08 * Hp); aB = prb - int(0.04 * Hp)
-        draw_arc_arrow(rd, (aL, aT, aR, aB), 110, 270, outline, width=7, head_len=22, head_w=14)
+        aT = prt + int(0.06 * Hp); aB = prb - int(0.06 * Hp)
+        draw_arc_arrow(rd, (aL, aT, aR, aB), 120, 270, outline, width=6, head_len=18, head_w=12)
 
     example = Image.new("RGB", (TW * 2 + pad, TH), bg)
     example.paste(left, (0, 0))
     example.paste(right, (TW + pad, 0))
+
     if DPI != 1:
         example = example.resize((example.width // DPI, example.height // DPI), Image.LANCZOS)
     return example
 
-# -------------------------- choices --------------------------
-def draw_choice(shapes_px: List[Tuple[str, Tuple[float, float]]],
+# -------------- choices (one paper per tile) --------------
+def draw_choice(shapes_norm: List[Tuple[str, Tuple[float, float]]],
                 tile_size: Tuple[int, int], ratio: float,
                 bg=(255, 255, 255), paper_fill=(250, 250, 250),
                 outline=(20, 20, 20)) -> Image.Image:
-
     TW, TH = [d * DPI for d in tile_size]
     img = Image.new("RGB", (TW, TH), bg)
     d = ImageDraw.Draw(img)
     l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
     paper_shadow(img, (l, t, r, b))
     rounded_rect(d, (l, t, r, b), 14, paper_fill, outline, 6)
-
-    for shp, (px, py) in shapes_px:
+    for shp, (x, y) in shapes_norm:
+        px, py = norm_to_px((x, y), (l, t, r, b))
         draw_shape_outline(d, (px, py), size=10 * DPI, shape=shp, color=outline, width=4)
-
     return img.resize(tile_size, Image.LANCZOS) if DPI != 1 else img
 
-# -------------------------- compose helpers --------------------------
+# ----- shape list signatures (to ensure uniqueness / correctness) -----
+def signature(shapes: List[Tuple[str, Tuple[float,float]]]) -> Tuple:
+    # normalized & sorted signature (rounded to 3 decimals)
+    norm = [(s, round(p[0],3), round(p[1],3)) for s,p in shapes]
+    return tuple(sorted(norm))
+
+# -------------- grid & compose --------------
 def overlay_label_below(tile: Image.Image, label: str, color=(20, 20, 20)) -> Image.Image:
     font = _try_font(22)
     tw = ImageDraw.Draw(tile).textlength(label, font=font)
@@ -285,110 +301,82 @@ def stack_vertical(top_img, bottom_img, pad=24, bg=(255, 255, 255)):
     canvas.paste(bottom_img, ((W - bottom_img.width) // 2, top_img.height + 2 * pad))
     return canvas
 
-# -------------------------- geometry helpers --------------------------
-def reflect_points_px(points_px: List[Tuple[str, Tuple[float, float]]],
-                      rect, axis: str) -> List[Tuple[str, Tuple[float, float]]]:
-    l, t, r, b = rect
-    out = []
-    if axis == "V":
-        for shp, (px, py) in points_px:
-            out.append((shp, (l + r - px, py)))     # reflect across vertical midline
-    else:
-        for shp, (px, py) in points_px:
-            out.append((shp, (px, t + b - py)))     # reflect across horizontal midline
-    return out
+# -------------- generator (guaranteed mirror) --------------
+def generate_single_fold_question(rng: random.Random, style: Optional[Dict] = None) -> Dict:
+    bg          = (style.get("bg") if style else None) or (255, 255, 255)
+    paper_fill  = (style.get("paper_fill") if style else None) or (250, 250, 250)
+    outline     = (style.get("outline") if style else None) or (20, 20, 20)
+    fold_color  = (style.get("fold_line") if style else None) or (60, 60, 60)
 
-def normalized_to_px_list(shapes_norm, rect):
-    return [(s, norm_to_px(p, rect)) for (s, p) in shapes_norm]
-
-# -------------------------- generator --------------------------
-def generate_single_fold_question(rng: random.Random,
-                                  style: Optional[Dict] = None) -> Dict:
-    bg = (style.get("bg") if style else None) or (255, 255, 255)
-    paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
-    outline = (style.get("outline") if style else None) or (20, 20, 20)
-    fold_color = (style.get("fold_line") if style else None) or (60, 60, 60)
-
-    # Random orientation
+    # pick fold type
     axis_choice = rng.choice(["V", "H"])
-    direction = "L" if axis_choice == "V" else "U"
+    direction   = "L" if axis_choice == "V" else "U"
     axis, folding_half = dir_to_axis_and_half(direction)
 
-    # Tile size & paper ratio by axis
     tile_size = get_tile_size(axis)
-    ratio = 2.3 if axis == "V" else 1.0
-    # Visible half (opposite of the folding half)
-    visible_half = (
-        {"left": "right", "right": "left"}[folding_half] if axis == "V"
-        else {"top": "bottom", "bottom": "top"}[folding_half]
-    )
+    ratio     = 2.3 if axis == "V" else 1.0
 
-    # Safety margins so shapes never sit near the fold axis or outer border
-    AXIS_MARGIN = 0.20
-    EDGE_MARGIN = 0.12
+    # shapes go on the visible (non-dotted) half
+    visible_half = (
+        {"left":"right","right":"left"}[folding_half] if axis == "V"
+        else {"top":"bottom","bottom":"top"}[folding_half]
+    )
 
     def sample_point_on_half():
         x = rng.uniform(-0.85, 0.85)
         y = rng.uniform(-0.70, 0.70)
         if axis == "V":
-            x = rng.uniform(-0.85, -AXIS_MARGIN) if visible_half == "left" else rng.uniform(AXIS_MARGIN, 0.85)
-            y = rng.uniform(-0.70, 0.70)
+            x = rng.uniform(-0.85, -0.12) if visible_half == "left" else rng.uniform(0.12, 0.85)
         else:
-            y = rng.uniform(AXIS_MARGIN, 0.85) if visible_half == "top" else rng.uniform(-0.85, -AXIS_MARGIN)
-            x = rng.uniform(-0.85, 0.85)
-        x = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, x))
-        y = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, y))
+            y = rng.uniform(0.12, 0.85) if visible_half == "top" else rng.uniform(-0.85, -0.12)
         return (round(x, 3), round(y, 3))
 
-    # Two shapes, spaced apart
-    pts = []
-    for _ in range(2):
-        p = sample_point_on_half(); tries = 0
-        while any(math.hypot(p[0]-q[0], p[1]-q[1]) < 0.40 for q in pts) and tries < 50:
-            p = sample_point_on_half(); tries += 1
-        pts.append(p)
+    # try until we get unique and valid choices
+    while True:
+        pts = []
+        for _ in range(2):
+            p = sample_point_on_half(); tries = 0
+            while any(math.hypot(p[0]-q[0], p[1]-q[1]) < 0.35 for q in pts) and tries < 40:
+                p = sample_point_on_half(); tries += 1
+            pts.append(p)
 
-    shapes = ["circle", "triangle"]; rng.shuffle(shapes)
-    shapes_visible = [(shapes[0], pts[0]), (shapes[1], pts[1])]
+        shapes = ["circle", "triangle"]; rng.shuffle(shapes)
+        shapes_visible = [(shapes[0], pts[0]), (shapes[1], pts[1])]
 
-    # Prepare pixel-space geometry on one canonical paper rect
-    TW, TH = [d * DPI for d in tile_size]
-    l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
+        # build all four answer sets
+        correct = shapes_visible + [(s, reflect_point(p, axis)) for s, p in shapes_visible]
+        wrong_axis = "H" if axis == "V" else "V"
+        wrong1 = list(shapes_visible)
+        wrong2 = shapes_visible + [(s, reflect_point(p, wrong_axis)) for s, p in shapes_visible]
+        swap = {"circle": "triangle", "triangle": "circle"}
+        wrong3 = shapes_visible + [(swap[s], reflect_point(p, axis)) for s, p in shapes_visible]
 
-    shapes_visible_px = normalized_to_px_list(shapes_visible, (l, t, r, b))
-    mirrored_px = reflect_points_px(shapes_visible_px, (l, t, r, b), axis)
+        sigs = { "C": signature(correct),
+                 "A": signature(wrong1),
+                 "B": signature(wrong2),
+                 "D": signature(wrong3) }
 
-    # --- Build choices: ONLY the mirrored set is the correct answer ---
-    shapes_correct_px = mirrored_px
+        # ensure uniqueness and correctness (no distractor equals the correct signature)
+        if len(set(sigs.values())) == 4:
+            all_sets = [correct, wrong1, wrong2, wrong3]
+            break
 
-    # Distractors:
-    # (1) Original-only (no reflection)
-    shapes_wrong1_px = list(shapes_visible_px)
+    # draw choices
+    cimgs = [draw_choice(s, tile_size, ratio, bg, paper_fill, outline) for s in all_sets]
 
-    # (2) Wrong-axis reflection
-    wrong_axis = "H" if axis == "V" else "V"
-    shapes_wrong2_px = reflect_points_px(shapes_visible_px, (l, t, r, b), wrong_axis)
-
-    # (3) Correct-axis mirror but swap shape types (positions correct, shapes wrong)
-    swap = {"circle": "triangle", "triangle": "circle"}
-    swapped = [(swap[s], pt) for (s, pt) in mirrored_px]
-    shapes_wrong3_px = swapped
-
-    # Render choices
-    c0 = draw_choice(shapes_correct_px, tile_size, ratio, bg, paper_fill, outline)
-    c1 = draw_choice(shapes_wrong1_px, tile_size, ratio, bg, paper_fill, outline)
-    c2 = draw_choice(shapes_wrong2_px, tile_size, ratio, bg, paper_fill, outline)
-    c3 = draw_choice(shapes_wrong3_px, tile_size, ratio, bg, paper_fill, outline)
-
-    choices = [c0, c1, c2, c3]; random.shuffle(choices); correct_index = choices.index(c0)
+    # shuffle with our rng and remember where the correct one went
+    order = list(range(4))
+    rng.shuffle(order)
+    choices = [cimgs[i] for i in order]
+    correct_index = order.index(0)  # index of "correct" after shuffling
 
     labels_ar = ["أ", "ب", "ج", "د"]
     grid = compose_2x2_grid(choices, labels_ar, pad=18, bg=bg)
     example = draw_example(direction, shapes_visible, tile_size, ratio, bg, paper_fill, outline, fold_color)
 
-    prompt_ar = "اختر البديل الذي يُظهر الانعكاس الصحيح للأشكال بعد فتح الورقة."
+    prompt_ar = "ما رمز البديل الذي يحتوي على صورة الورقة بعد إعادة فتحها من بين البدائل الأربعة؟"
     meta = {
-        "type": "folding_single_shapes_mirror_only",
+        "type": "folding_single_shapes",
         "direction": direction,
         "axis": axis,
         "folding_half": folding_half,
@@ -406,7 +394,7 @@ def generate_single_fold_question(rng: random.Random,
         "meta": meta
     }
 
-# -------------------------- Sidebar builder --------------------------
+# ---------------- Sidebar builder (prevents DeltaGenerator doc spam) ----------------
 def build_sidebar():
     sb = st.sidebar
     with sb:
@@ -434,37 +422,37 @@ def build_sidebar():
     return dict(seed=seed, bg_hex=bg_hex, paper_hex=paper_hex, outline_hex=outline_hex,
                 fold_line_hex=fold_line_hex, gen_btn=gen_btn, batch_n=batch_n, batch_btn=batch_btn)
 
-# -------------------------- Streamlit UI --------------------------
+# ---------------- Streamlit UI ----------------
 st.set_page_config(page_title="Paper Folding — Two-Panel Example", layout="wide")
 st.title("Paper Folding — Two-Panel Example (Single Fold)")
 
 ui = build_sidebar()
+
 style = {
     "bg": _hex_to_rgb(ui["bg_hex"]),
     "paper_fill": _hex_to_rgb(ui["paper_hex"]),
     "outline": _hex_to_rgb(ui["outline_hex"]),
     "fold_line": _hex_to_rgb(ui["fold_line_hex"]),
 }
-rng = make_rng(ui["seed"])
 
+rng = make_rng(ui["seed"])
 if ("fold_qpack" not in st.session_state) or ui["gen_btn"]:
     st.session_state.fold_qpack = generate_single_fold_question(rng, style=style)
 
 qp = st.session_state.get("fold_qpack")
+
 if qp:
     grid = compose_2x2_grid(qp["choices_imgs"], qp["labels_ar"], pad=18, bg=style["bg"])
     composite = stack_vertical(qp["problem_img"], grid, pad=24, bg=style["bg"])
+
     st.subheader("Question")
     st.write(qp["prompt"])
-    st.image(composite, width=DISPLAY_WIDTH)
+    st.image(composite, width=DISPLAY_WIDTH)  # smaller on page
 
     chosen = st.radio("Pick your answer:", qp["labels_ar"], index=0, horizontal=True)
     if st.button("Check answer"):
         ans = qp["labels_ar"][qp["correct_index"]]
-        if chosen == ans:
-            st.success(f"الإجابة الصحيحة: {ans}")
-        else:
-            st.error(f"غير صحيح. الإجابة الصحيحة: {ans}")
+        st.success(f"الإجابة الصحيحة: {ans}") if chosen == ans else st.error(f"غير صحيح. الإجابة الصحيحة: {ans}")
 
     st.markdown("---")
     st.subheader("Export")
@@ -473,13 +461,17 @@ if qp:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG")
         zf.writestr("problem.png", pb.getvalue())
+
         for i, im in enumerate(qp["choices_imgs"]):
             cb = io.BytesIO(); im.save(cb, format="PNG")
             zf.writestr(f"choice_{qp['labels_ar'][i]}.png", cb.getvalue())
+
         gb = io.BytesIO(); grid.save(gb, format="PNG")
         zf.writestr("grid.png", gb.getvalue())
+
         qb = io.BytesIO(); composite.save(qb, format="PNG")
         zf.writestr("question.png", qb.getvalue())
+
         meta = {
             "type": qp["meta"]["type"],
             "direction": qp["meta"]["direction"],
@@ -494,6 +486,7 @@ if qp:
             "correct_label": qp["labels_ar"][qp["correct_index"]],
         }
         zf.writestr("question.json", json.dumps(meta, indent=2, ensure_ascii=False))
+
     st.download_button(
         "Download ZIP",
         data=buf.getvalue(),
@@ -506,19 +499,23 @@ if qp:
         with zipfile.ZipFile(bbuf, "w", zipfile.ZIP_DEFLATED) as zf:
             index = []
             for k in range(int(ui["batch_n"])):
-                local_rng = make_rng((ui["seed"] or 0) + k + 1)
+                local_rng  = make_rng((ui["seed"] or 0) + k + 1)
                 local_pack = generate_single_fold_question(local_rng, style=style)
                 qid = f"folding_two_panel_{int(time.time()*1000)}_{k}"
+
                 local_grid = compose_2x2_grid(local_pack["choices_imgs"], local_pack["labels_ar"], pad=18, bg=style["bg"])
                 local_comp = stack_vertical(local_pack["problem_img"], local_grid, pad=24, bg=style["bg"])
 
                 pb = io.BytesIO(); local_pack["problem_img"].save(pb, format="PNG")
                 zf.writestr(f"{qid}/problem.png", pb.getvalue())
+
                 for i, im in enumerate(local_pack["choices_imgs"]):
                     cb = io.BytesIO(); im.save(cb, format="PNG")
                     zf.writestr(f"{qid}/choice_{local_pack['labels_ar'][i]}.png", cb.getvalue())
+
                 gb = io.BytesIO(); local_grid.save(gb, format="PNG")
                 zf.writestr(f"{qid}/grid.png", gb.getvalue())
+
                 qb = io.BytesIO(); local_comp.save(qb, format="PNG")
                 zf.writestr(f"{qid}/question.png", qb.getvalue())
 
@@ -531,7 +528,7 @@ if qp:
                     "visible_half": local_pack["meta"]["visible_half"],
                     "ratio": local_pack["meta"]["ratio"],
                     "tile_size": local_pack["meta"]["tile_size"],
-                    "shapes_visible": local_pack["meta"]["shapes_visible"],
+                    "shapes_visible": local_pack["shapes_visible"],
                     "prompt": local_pack["prompt"],
                     "labels": local_pack["labels_ar"],
                     "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
