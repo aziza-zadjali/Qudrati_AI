@@ -1,480 +1,444 @@
 # -*- coding: utf-8 -*-
-# pages/8_folding_challenge.py
-#
-# Paper Folding — Canonical Dimensions (Single Fold)
-# - All paper panels (example & choices) share one canonical PAPER_W×PAPER_H.
-# - Inset on the left (folded half + dotted empty half) uses the SAME paper aspect ratio.
-# - Choices are wide landscape tiles; labels below; Arabic prompt outside images.
-# - Single fold (L/R/U/D) with correct mirroring.
-# - Exports: problem.png, grid.png, question.png, question.json (ensure_ascii=False).
-# - Images auto-fit Streamlit container width.
+# pages/7_spacial_questions.py
+# Matrix reasoning (3x3) with optional style mimic from an uploaded sample.
+# ASCII-only, Pillow 10+ safe.
 
-import io, time, math, random, zipfile, json
+import io
+import time
+import math
+import random
+import zipfile
+import json
+
 from typing import List, Tuple, Optional, Dict
 
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 
-# ---------------- Utilities ----------------
+# ----------------------------
+# Utilities
+# ----------------------------
+
 def make_rng(seed: Optional[int]) -> random.Random:
     if seed is None:
         seed = int(time.time() * 1000) % 2147483647
     return random.Random(seed)
 
-def _try_font(size: int):
-    for name in ("DejaVuSans.ttf", "Arial.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except Exception:
-            pass
-    return ImageFont.load_default()
-
-def _hex_to_rgb(h):
+def _load_font(font_size: int):
     try:
-        h = h.strip().lstrip("#")
-        if len(h) == 3: h = "".join([c*2 for c in h])
-        if len(h) != 6: return (255, 255, 255)
-        return (int(h[0:2],16), int(h[2:4],16), int(h[4:6],16))
+        return ImageFont.truetype("DejaVuSans.ttf", font_size)
     except Exception:
-        return (255, 255, 255)
+        try:
+            return ImageFont.truetype("Arial.ttf", font_size)
+        except Exception:
+            return ImageFont.load_default()
 
-def show_image(img, caption=None):
-    st.image(img, caption=caption, use_container_width=True)
-
-# ---------------- Geometry ----------------
-def reflect_point(p: Tuple[float, float], axis: str) -> Tuple[float, float]:
-    x, y = p
-    return (-x, y) if axis == "V" else (x, -y) if axis == "H" else (x, y)
-
-def dir_to_axis_and_half(direction: str):
-    if direction == "L": return "V", "right"
-    if direction == "R": return "V", "left"
-    if direction == "U": return "H", "bottom"
-    return "H", "top"  # "D"
-
-def norm_to_px(xy, rect):
-    x, y = xy
-    l, t, r, b = rect
-    px = (x + 1) / 2.0 * (r - l) + l
-    py = (1 - (y + 1) / 2.0) * (b - t) + t
-    return px, py
-
-# ---------------- Drawing primitives ----------------
-def rounded_rect(draw: ImageDraw.ImageDraw, box, radius, fill, outline, width=3):
-    if hasattr(draw, "rounded_rectangle"):
-        draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
-    else:
-        draw.rectangle(box, fill=fill, outline=outline, width=width)
-
-def paper_shadow(base_img: Image.Image, rect, blur=10, offset=(8, 10), opacity=90):
-    l, t, r, b = rect
-    w, h = r - l, b - t
-    shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    sd.rectangle([0, 0, w, h], fill=(0, 0, 0, opacity))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
-    base_img.paste(shadow, (l + offset[0], t + offset[1]), shadow)
-
-def dotted_line_circles(draw: ImageDraw.ImageDraw, p1, p2, color, dot_r=3, gap=12):
-    x1, y1 = p1; x2, y2 = p2
-    length = math.hypot(x2 - x1, y2 - y1)
-    if length <= 0: return
-    steps = max(1, int(length // gap))
-    for i in range(steps + 1):
-        t = i / steps
-        x = x1 + (x2 - x1) * t
-        y = y1 + (y2 - y1) * t
-        draw.ellipse([x - dot_r, y - dot_r, x + dot_r, y + dot_r], fill=color)
-
-def draw_arc_arrow(draw: ImageDraw.ImageDraw, bbox, start_deg, end_deg, color, width=7, head_len=22, head_w=14):
-    draw.arc(bbox, start=start_deg, end=end_deg, fill=color, width=width)
-    cx = (bbox[0] + bbox[2]) / 2; cy = (bbox[1] + bbox[3]) / 2
-    rx = abs(bbox[2] - bbox[0]) / 2; ry = abs(bbox[3] - bbox[1]) / 2
-    t = math.radians(end_deg)
-    tip_x = cx + rx * math.cos(t); tip_y = cy + ry * math.sin(t)
-    vx = -rx * math.sin(t); vy =  ry * math.cos(t)
-    L = math.hypot(vx, vy) or 1.0; ux, uy = vx / L, vy / L; px, py = -uy, ux
-    base_x = tip_x - ux * head_len; base_y = tip_y - uy * head_len
-    p1 = (base_x + px * head_w, base_y + py * head_w)
-    p2 = (base_x - px * head_w, base_y - py * head_w)
-    draw.polygon([(tip_x, tip_y), p1, p2], fill=color)
-
-def draw_shape_outline(draw: ImageDraw.ImageDraw, center, size, shape, color, width):
-    cx, cy = center
-    if shape == "circle":
-        r = size
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=width)
-    elif shape == "triangle":
-        s = size * 1.6
-        p1 = (cx, cy - s * 0.9)
-        p2 = (cx - s, cy + s * 0.9)
-        p3 = (cx + s, cy + s * 0.9)
-        draw.line([p1, p2, p3, p1], fill=color, width=width, joint="curve")
-    else:
-        s = size * 1.4
-        draw.rectangle([cx - s, cy - s, cx + s, cy + s], outline=color, width=width)
-
-# --------------- Canonical layout spec ---------------
-class CanonSpec:
-    # ONE canonical paper size used everywhere in a question.
-    PANEL_RATIO = 2.3    # width:height (landscape like your sample)
-    PAPER_MARGIN = 0.09  # as fraction of canvas width
-    PAPER_STROKE = 6
-    CHOICE_TILE = (560, 260)   # canvas for each choice
-    DPI = 2
-
-    @classmethod
-    def paper_rect_on_canvas(cls, W, H):
-        # Respect PANEL_RATIO and center paper
-        margin = int(cls.PAPER_MARGIN * W)
-        l = margin; r = W - margin
-        p_w = r - l
-        p_h = int(p_w / cls.PANEL_RATIO)
-        t = max(16, (H - p_h)//2); b = t + p_h
-        return (l, t, r, b)
-
-# ---------------- Example (uses canonical paper size) ----------------
-def draw_example(direction: str,
-                 shapes_norm: List[Tuple[str, Tuple[float,float]]],
-                 out_width: int,
-                 bg=(255,255,255), paper_fill=(250,250,250),
-                 outline=(20,20,20), fold_line_color=(60,60,60)) -> Image.Image:
-
-    dpi = CanonSpec.DPI
-    # Target: example width == grid width; height based on canonical paper height + arrow room
-    # Compute canonical paper height from choice tile
-    Wc, Hc = CanonSpec.CHOICE_TILE
-    tmp_img = Image.new("RGB", (Wc * dpi, Hc * dpi), bg)
-    paper_rect = CanonSpec.paper_rect_on_canvas(tmp_img.width, tmp_img.height)
-    paper_h = paper_rect[3] - paper_rect[1]
-
-    out_height = int(paper_h * 1.35 / dpi)   # arrow gap
-    W, H = out_width * dpi, out_height * dpi
-    img = Image.new("RGB", (W, H), bg)
+def text_image(text: str, size=(380, 380), font_size=42,
+               color=(30, 30, 30), bg=(255, 255, 255)) -> Image.Image:
+    img = Image.new("RGB", size, bg)
     d = ImageDraw.Draw(img)
-
-    axis, _half = dir_to_axis_and_half(direction)
-
-    # Big paper placed center-right; the paper rectangle must equal canonical size
-    # Build a canvas sized like one choice tile and paste into the right side area.
-    big_canvas = Image.new("RGB", (Wc * dpi, Hc * dpi), bg)
-    bd = ImageDraw.Draw(big_canvas)
-    # Canonical paper rect on big_canvas
-    pl, pt, pr, pb = CanonSpec.paper_rect_on_canvas(big_canvas.width, big_canvas.height)
-    paper_shadow(big_canvas, (pl, pt, pr, pb), blur=12, offset=(8,10), opacity=75)
-    rounded_rect(bd, (pl, pt, pr, pb), radius=14, fill=paper_fill, outline=outline, width=CanonSpec.PAPER_STROKE)
-
-    # Fold line + arrow on big paper
-    cx = (pl + pr)//2; cy = (pt + pb)//2
-    if axis == "V":
-        dotted_line_circles(bd, (cx, pt + 10), (cx, pb - 10), fold_line_color, dot_r=4, gap=16)
-        arc_left, arc_right = pr - int(0.32 * (pr - pl)), pr - int(0.04 * (pr - pl))
-        arc_top, arc_bottom = pt, pb
-        start, end = (210, -20) if direction == "L" else (-20, 210)
-        draw_arc_arrow(bd, (arc_left, arc_top, arc_right, arc_bottom), start, end, outline, width=7, head_len=22, head_w=14)
-    else:
-        dotted_line_circles(bd, (pl + 10, cy), (pr - 10, cy), fold_line_color, dot_r=4, gap=16)
-        arc_w = int((pr - pl) * 0.45)
-        axl = (pl + pr)//2 - arc_w//2; axr = axl + arc_w
-        ayt = pb + int(0.06*(pb-pt)); ayb = ayt + int((pb - pt) * 0.9)
-        start, end = (160, 340) if direction == "U" else (-20, 160)
-        draw_arc_arrow(bd, (axl, ayt, axr, ayb), start, end, outline, width=7, head_len=22, head_w=14)
-
-    # Left inset: two smaller panels, each maintaining SAME aspect ratio as canonical paper.
-    inset_w = int(Wc * 0.86) * dpi
-    inset_h = big_canvas.height
-    inset = Image.new("RGB", (inset_w, inset_h), bg)
-    idraw = ImageDraw.Draw(inset)
-
-    def draw_small_paper(box, dotted=False):
-        bl, bt, br, bb = box
-        inset_canvas = Image.new("RGB", (br - bl, bb - bt), bg)
-        icd = ImageDraw.Draw(inset_canvas)
-        rpl, rpt, rpr, rpb = CanonSpec.paper_rect_on_canvas(inset_canvas.width, inset_canvas.height)
-        rounded_rect(icd, (rpl, rpt, rpr, rpb), radius=12, fill=paper_fill, outline=outline if not dotted else None, width=CanonSpec.PAPER_STROKE)
-        if dotted:
-            # dotted rectangle outline
-            step = 20
-            for x in range(rpl+8, rpr-8, step):
-                icd.line([(x, rpt+8), (x+8, rpt+8)], fill=fold_line_color, width=3)
-                icd.line([(x, rpb-8), (x+8, rpb-8)], fill=fold_line_color, width=3)
-            for y in range(rpt+8, rpb-8, step):
-                icd.line([(rpl+8, y), (rpl+8, y+8)], fill=fold_line_color, width=3)
-                icd.line([(rpr-8, y), (rpr-8, y+8)], fill=fold_line_color, width=3)
-        inset.paste(inset_canvas, (bl, bt))
-
-    axis, shaded_half = dir_to_axis_and_half(direction)
-    gap = int(12 * dpi)
-    if axis == "V":
-        half_w = (inset.width - gap) // 2
-        left_box  = (0, 0, half_w, inset.height)
-        right_box = (half_w + gap, 0, inset.width, inset.height)
-        box_with_shapes = left_box if shaded_half == "left" else right_box
-        empty_box       = right_box if shaded_half == "left" else left_box
-    else:
-        half_h = (inset.height - gap) // 2
-        top_box    = (0, 0, inset.width, half_h)
-        bottom_box = (0, half_h + gap, inset.width, inset.height)
-        box_with_shapes = top_box if shaded_half == "top" else bottom_box
-        empty_box       = bottom_box if shaded_half == "top" else top_box
-
-    draw_small_paper(box_with_shapes, dotted=False)
-    draw_small_paper(empty_box, dotted=True)
-
-    # Draw shapes (circle + triangle) into the "with_shapes" small paper using SAME relative size.
-    # Map from normalized to the paper rect inside box_with_shapes:
-    def inner_paper_rect_of(box):
-        bl, bt, br, bb = box
-        w, h = br - bl, bb - bt
-        rpl, rpt, rpr, rpb = CanonSpec.paper_rect_on_canvas(w, h)
-        return (bl + rpl, bt + rpt, bl + rpr, bt + rpb)
-
-    ipr = inner_paper_rect_of(box_with_shapes)
-    s_line = max(4, CanonSpec.PAPER_STROKE - 1)
-    for shp, (sx, sy) in shapes_norm:
-        px, py = norm_to_px((sx, sy), ipr)
-        draw_shape_outline(idraw, (px, py), size=10 * dpi, shape=shp, color=outline, width=s_line)
-
-    # Compose inset + big_canvas onto final band
-    # Align to left/right with a consistent gap
-    left_x = int(12 * dpi)
-    img.paste(inset, (left_x, (H - inset.height)//2))
-    right_x = W - big_canvas.width - left_x
-    img.paste(big_canvas, (right_x, (H - big_canvas.height)//2))
-
-    if CanonSpec.DPI != 1:
-        img = img.resize((out_width, out_height), Image.LANCZOS)
+    font = _load_font(font_size)
+    try:
+        left, top, right, bottom = d.textbbox((0, 0), text, font=font)
+        w, h = right - left, bottom - top
+        x = (size[0] - w) / 2 - left
+        y = (size[1] - h) / 2 - top
+    except Exception:
+        try:
+            w = int(d.textlength(text, font=font))
+        except Exception:
+            w = int(len(text) * font_size * 0.6)
+        h = int(font_size * 1.2)
+        x = (size[0] - w) / 2
+        y = (size[1] - h) / 2
+    d.text((x, y), text, fill=color, font=font)
     return img
 
-# ---------------- Choices (canonical size) ----------------
-def draw_choice(shapes_norm: List[Tuple[str, Tuple[float,float]]],
-                tile_size=None, bg=(255,255,255), paper_fill=(250,250,250),
-                outline=(20,20,20)) -> Image.Image:
+def show_image(img, caption=None):
+    try:
+        st.image(img, caption=caption, width="stretch")
+    except TypeError:
+        st.image(img, caption=caption, use_container_width=True)
 
-    tile_size = tile_size or CanonSpec.CHOICE_TILE
-    W, H = tile_size[0]*CanonSpec.DPI, tile_size[1]*CanonSpec.DPI
-    img = Image.new("RGB", (W, H), bg); d = ImageDraw.Draw(img)
+def _draw_polygon(draw, pts, fill, outline, width):
+    draw.polygon(pts, fill=fill)
+    pts_closed = list(pts) + [pts[0]]
+    try:
+        draw.line(pts_closed, fill=outline, width=width, joint="curve")
+    except TypeError:
+        draw.line(pts_closed, fill=outline, width=width)
 
-    l, t, r, b = CanonSpec.paper_rect_on_canvas(W, H)
-    paper_shadow(img, (l, t, r, b), blur=10, offset=(6, 8), opacity=75)
-    rounded_rect(d, (l, t, r, b), radius=14, fill=paper_fill, outline=outline, width=CanonSpec.PAPER_STROKE)
+def _rotate_points(points, angle_deg, origin):
+    ox, oy = origin
+    ang = math.radians(angle_deg)
+    out = []
+    for x, y in points:
+        qx = ox + math.cos(ang) * (x - ox) - math.sin(ang) * (y - oy)
+        qy = oy + math.sin(ang) * (x - ox) + math.cos(ang) * (y - oy)
+        out.append((qx, qy))
+    return out
 
-    for shp, (x, y) in shapes_norm:
-        px, py = norm_to_px((x, y), (l, t, r, b))
-        draw_shape_outline(d, (px, py), size=10 * CanonSpec.DPI, shape=shp, color=outline, width=max(4, CanonSpec.PAPER_STROKE-2))
+def draw_shape(draw, shape: str, center: Tuple[int, int], size: int,
+               rotation_deg: float = 0, fill=(20, 20, 20), outline=(20, 20, 20), width: int = 4):
+    cx, cy = center
+    r = size // 2
+    if shape == "circle":
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill, outline=outline, width=width)
+    elif shape == "square":
+        pts = [(cx - r, cy - r), (cx + r, cy - r), (cx + r, cy + r), (cx - r, cy + r)]
+        pts = _rotate_points(pts, rotation_deg, (cx, cy))
+        _draw_polygon(draw, pts, fill=fill, outline=outline, width=width)
+    elif shape == "triangle":
+        pts = [(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)]
+        pts = _rotate_points(pts, rotation_deg, (cx, cy))
+        _draw_polygon(draw, pts, fill=fill, outline=outline, width=width)
+    elif shape == "pentagon":
+        pts = []
+        for k in range(5):
+            ang = 90 + 72 * k
+            pts.append((cx + r * math.cos(math.radians(ang)), cy + r * math.sin(math.radians(ang))))
+        pts = _rotate_points(pts, rotation_deg, (cx, cy))
+        _draw_polygon(draw, pts, fill=fill, outline=outline, width=width)
+    else:
+        draw.line([cx - r, cy, cx + r, cy], fill=outline, width=width)
+        draw.line([cx, cy - r, cx, cy + r], fill=outline, width=width)
 
-    return img.resize(tile_size, Image.LANCZOS) if CanonSpec.DPI != 1 else img
-
-# ---------------- Grid & stacking ----------------
-def overlay_label_below(tile: Image.Image, label: str, text_color=(20,20,20)) -> Image.Image:
-    font = _try_font(24)
-    tw = ImageDraw.Draw(tile).textlength(label, font=font)
-    pad = 10
-    canvas = Image.new("RGB", (tile.width, tile.height + 40), (255,255,255))
-    canvas.paste(tile, (0, 0))
-    d = ImageDraw.Draw(canvas)
-    d.text(((canvas.width - tw)/2, tile.height + pad), label, fill=text_color, font=font)
-    return canvas
-
-def compose_2x2_grid(choices, labels, pad=24, bg=(255,255,255)):
-    tiles = []
-    for i in range(4):
-        t = choices[i].copy()
-        d = ImageDraw.Draw(t)
-        d.rectangle([3, 3, t.width-3, t.height-3], outline=(20,20,20), width=2)
-        tiles.append(overlay_label_below(t, labels[i]))
-    w, h = tiles[0].size
-    W = 2*w + 3*pad; H = 2*h + 3*pad
+def compose_grid(images, grid_size, pad=16, bg=(255,255,255)):
+    rows, cols = grid_size
+    assert len(images) == rows * cols
+    w, h = images[0].size
+    for im in images:
+        if im.size != (w, h):
+            raise ValueError("Tile size mismatch")
+    W = cols * w + (cols + 1) * pad
+    H = rows * h + (rows + 1) * pad
     canvas = Image.new("RGB", (W, H), bg)
-    canvas.paste(tiles[0], (pad, pad))
-    canvas.paste(tiles[1], (2*pad + w, pad))
-    canvas.paste(tiles[2], (pad, 2*pad + h))
-    canvas.paste(tiles[3], (2*pad + w, 2*pad + h))
+    for r in range(rows):
+        for c in range(cols):
+            x = pad + c * (w + pad)
+            y = pad + r * (h + pad)
+            canvas.paste(images[r * cols + c], (x, y))
     return canvas
 
-def stack_vertical(top_img, bottom_img, pad=28, bg=(255,255,255)):
-    W = max(top_img.width, bottom_img.width) + 2*pad
-    H = top_img.height + bottom_img.height + 3*pad
-    canvas = Image.new("RGB", (W, H), bg)
-    canvas.paste(top_img, ((W - top_img.width)//2, pad))
-    canvas.paste(bottom_img, ((W - bottom_img.width)//2, top_img.height + 2*pad))
-    return canvas
+# ----------------------------
+# Optional style extraction to mimic sample palette
+# ----------------------------
 
-# ---------------- Question generator ----------------
-def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None) -> Dict:
+def extract_style_from_image(img: Image.Image, n_colors: int = 6) -> Dict:
+    small = img.convert("RGB")
+    if max(small.size) > 512:
+        scale = 512 / max(small.size)
+        small = small.resize((int(small.width * scale), int(small.height * scale)), Image.BILINEAR)
+    pal = small.quantize(colors=n_colors, method=Image.MEDIANCUT)
+    palette = pal.getpalette()[:n_colors * 3]
+    counts = pal.getcolors()
+    colors_freq = []
+    if counts:
+        for count, idx in counts:
+            rgb = tuple(palette[idx * 3: idx * 3 + 3])
+            colors_freq.append((count, rgb))
+        colors_freq.sort(key=lambda x: x[0], reverse=True)
+    bg = colors_freq[0][1] if colors_freq else (255, 255, 255)
+
+    def lum(c): return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
+    unique = [rgb for _, rgb in colors_freq] or [(30,30,30), (240,240,240)]
+    outline = min(unique, key=lum)
+    fills = [c for c in unique if c != bg] or [(30,30,30), (0,88,155), (200,0,0)]
+    stroke_width = 5 if img.width < 800 else (6 if img.width < 1400 else 8)
+    text_color = (20,20,20) if lum(bg) > 186 else (240,240,240)
+    return {"bg": bg, "outline": outline, "fills": fills, "stroke_width": stroke_width, "text_color": text_color}
+
+# ----------------------------
+# Matrix generator (3x3)
+# ----------------------------
+
+DEFAULT_COLORS = [
+    (30, 30, 30),
+    (0, 88, 155),
+    (200, 0, 0),
+    (0, 140, 70),
+    (220, 120, 0),
+    (120, 0, 160),
+]
+DEFAULT_SHAPES = ["circle", "square", "triangle", "pentagon"]
+
+def generate_matrix_reasoning(rng: random.Random, img_size=(380,380), cell_shape_size=160,
+                              difficulty="Medium", style: Optional[Dict] = None) -> Dict:
+    fills = (style.get("fills") if style else None) or DEFAULT_COLORS
+    outline = (style.get("outline") if style else None) or (10, 10, 10)
     bg = (style.get("bg") if style else None) or (255, 255, 255)
-    paper_fill = (style.get("paper_fill") if style else None) or (250, 250, 250)
-    outline = (style.get("outline") if style else None) or (20, 20, 20)
-    fold_line_color = (style.get("fold_line") if style else None) or (60, 60, 60)
+    stroke = (style.get("stroke_width") if style else None) or 4
+    txt_col = (style.get("text_color") if style else None) or (30, 30, 30)
 
-    direction = rng.choice(["L", "R", "U", "D"])
-    axis, _ = dir_to_axis_and_half(direction)
+    if difficulty == "Easy":
+        rules_to_use = 1; step_choices = [0, 45, 90]
+    elif difficulty == "Hard":
+        rules_to_use = 3; step_choices = [30, 45, 60, 90]
+    else:
+        rules_to_use = 2; step_choices = [30, 45, 60, 90]
 
-    # Sample two shapes on the folding half (circle + triangle), spaced apart
-    def sample_point_on_half(shaded_half):
-        x = rng.uniform(-0.85, 0.85)
-        y = rng.uniform(-0.70, 0.70)
-        if axis == "V":
-            x = rng.uniform(-0.85, -0.12) if shaded_half == "left" else rng.uniform(0.12, 0.85)
-        else:
-            y = rng.uniform(-0.85, -0.12) if shaded_half == "top" else rng.uniform(0.12, 0.85)
-        return (round(x, 3), round(y, 3))
+    use_rotation = use_count = use_color = use_size = False
+    for s in rng.sample(["rotation", "count", "color", "size"], rules_to_use):
+        if s == "rotation": use_rotation = True
+        elif s == "count":  use_count = True
+        elif s == "color":  use_color = True
+        elif s == "size":   use_size = True
 
-    shaded_half = dir_to_axis_and_half(direction)[1]
-    pts = []
-    for _ in range(2):
-        p = sample_point_on_half(shaded_half); tries=0
-        while any(math.hypot(p[0]-q[0], p[1]-q[1]) < 0.35 for q in pts) and tries < 20:
-            p = sample_point_on_half(shaded_half); tries += 1
-        pts.append(p)
+    rotation_step = rng.choice(step_choices) if use_rotation else 0
+    base_count = rng.randint(1, 2) if use_count else 1
+    base_size = cell_shape_size
+    size_step = rng.choice([-20, 20]) if use_size else 0
+    base_color_idx = rng.randrange(len(fills)) if use_color else 0
+    color_by_row = (rng.random() < 0.5) if use_color else True
+    shape = rng.choice(DEFAULT_SHAPES)
 
-    shapes_half = []
-    base_shapes = ["circle", "triangle"]; rng.shuffle(base_shapes)
-    shapes_half.append((base_shapes[0], pts[0]))
-    shapes_half.append((base_shapes[1], pts[1]))
+    tiles = []
+    desc = []
+    for r in range(3):
+        for c in range(3):
+            if r == 2 and c == 2:
+                tiles.append(text_image("?", size=img_size, font_size=int(img_size[0] * 0.32),
+                                        color=txt_col, bg=bg))
+                continue
+            img = Image.new("RGB", img_size, bg)
+            d = ImageDraw.Draw(img)
+            rot = (c * rotation_step) % 360 if use_rotation else 0
+            count = base_count + r if use_count else 1
+            size_px = max(50, base_size + r * size_step) if use_size else base_size
+            if use_color:
+                shift = r if color_by_row else c
+                color_idx = (base_color_idx + shift) % len(fills)
+            else:
+                color_idx = base_color_idx
+            cols_cnt = int(math.ceil(math.sqrt(count)))
+            rows_cnt = int(math.ceil(count / cols_cnt))
+            grid_w, grid_h = img_size
+            margin = 30
+            cell_w = (grid_w - 2 * margin) // cols_cnt
+            cell_h = (grid_h - 2 * margin) // rows_cnt
+            mini = min(size_px, int(0.8 * min(cell_w, cell_h)))
+            k = 0
+            for rr in range(rows_cnt):
+                for cc in range(cols_cnt):
+                    if k >= count: break
+                    cx = margin + cc * cell_w + cell_w // 2
+                    cy = margin + rr * cell_h + cell_h // 2
+                    draw_shape(d, shape, (cx, cy), mini, rotation_deg=rot,
+                               fill=fills[color_idx], outline=outline, width=stroke)
+                    k += 1
+            tiles.append(img)
 
-    mirrored = [(shp, reflect_point(pt, axis)) for (shp, pt) in shapes_half]
-    shapes_correct = shapes_half + mirrored
+    correct_rot = (2 * rotation_step) % 360 if use_rotation else 0
+    correct_count = base_count + 2 if use_count else 1
+    correct_size = max(50, base_size + 2 * size_step) if use_size else base_size
+    if use_color:
+        color_idx_correct = (base_color_idx + 2) % len(fills)
+    else:
+        color_idx_correct = base_color_idx
 
-    wrong_axis = "H" if axis == "V" else "V"
-    shapes_wrong1 = list(shapes_half)
-    shapes_wrong2 = shapes_half + [(shp, reflect_point(pt, wrong_axis)) for (shp, pt) in shapes_half]
-    swap = {"circle": "triangle", "triangle": "circle"}
-    shapes_wrong3 = shapes_half + [(swap[shp], reflect_point(pt, axis)) for (shp, pt) in shapes_half]
+    def render_multi(cnt, rot, sz, col_idx):
+        img = Image.new("RGB", img_size, bg)
+        d = ImageDraw.Draw(img)
+        cols_cnt = int(math.ceil(math.sqrt(cnt)))
+        rows_cnt = int(math.ceil(cnt / cols_cnt))
+        grid_w, grid_h = img_size
+        margin = 30
+        cell_w = (grid_w - 2 * margin) // cols_cnt
+        cell_h = (grid_h - 2 * margin) // rows_cnt
+        mini = min(sz, int(0.8 * min(cell_w, cell_h)))
+        k = 0
+        for rr in range(rows_cnt):
+            for cc in range(cols_cnt):
+                if k >= cnt: break
+                cx = margin + cc * cell_w + cell_w // 2
+                cy = margin + rr * cell_h + cell_h // 2
+                draw_shape(d, shape, (cx, cy), mini, rotation_deg=rot,
+                           fill=fills[col_idx], outline=outline, width=stroke)
+                k += 1
+        return img
 
-    c0 = draw_choice(shapes_correct, CanonSpec.CHOICE_TILE, bg, paper_fill, outline)
-    c1 = draw_choice(shapes_wrong1, CanonSpec.CHOICE_TILE, bg, paper_fill, outline)
-    c2 = draw_choice(shapes_wrong2, CanonSpec.CHOICE_TILE, bg, paper_fill, outline)
-    c3 = draw_choice(shapes_wrong3, CanonSpec.CHOICE_TILE, bg, paper_fill, outline)
+    correct_img = render_multi(correct_count, correct_rot, correct_size, color_idx_correct)
 
-    choices = [c0, c1, c2, c3]; rng.shuffle(choices)
-    correct_index = choices.index(c0)
+    def make_distractor(var: str):
+        cnt, rot, sz, col = correct_count, correct_rot, correct_size, color_idx_correct
+        if var == "rotation":
+            step = rotation_step if rotation_step != 0 else rng.choice([30,45,60,90])
+            rot = (rot + rng.choice([-step, step])) % 360
+        elif var == "count":
+            cnt = max(1, cnt + rng.choice([-1, 1]))
+        elif var == "size":
+            sz = max(50, sz + rng.choice([-20, 20]))
+        elif var == "color":
+            col = (col + rng.choice([1, -1])) % len(fills)
+        return render_multi(cnt, rot, sz, col)
 
-    labels_ar = ["أ", "ب", "ج", "د"]
-    grid = compose_2x2_grid(choices, labels_ar, pad=24, bg=bg)
-    example = draw_example(direction, shapes_half, out_width=grid.width,
-                           bg=bg, paper_fill=paper_fill, outline=outline, fold_line_color=fold_line_color)
+    kinds = []
+    if use_rotation: kinds.append("rotation")
+    if use_count:    kinds.append("count")
+    if use_size:     kinds.append("size")
+    if use_color:    kinds.append("color")
+    while len(kinds) < 3:
+        kinds.append(rng.choice(["rotation","count","size","color"]))
 
-    prompt_ar = "ما رمز البديل الذي يحتوي على صورة الورقة بعد إعادة فتحها من بين البدائل الأربعة؟"
-    meta = {
-        "type": "folding_single_shapes",
-        "direction": direction,
-        "axis": axis,
-        "half": shaded_half,
-        "shapes_half": shapes_half
-    }
+    choices = [correct_img] + [make_distractor(k) for k in kinds]
+    rng.shuffle(choices)
+
+    if use_rotation: desc.append("Rotation increases by %d deg." % rotation_step)
+    if use_count:    desc.append("Count increases by 1 down rows.")
+    if use_color:    desc.append("Color alternates.")
+    if use_size:     desc.append("Size changes by %+d px per row." % size_step)
+    rule_desc = " ".join(desc) if desc else "Follow the visual pattern."
+
     return {
-        "problem_img": example,
+        "grid_imgs": tiles,
+        "grid_size": (3, 3),
         "choices_imgs": choices,
-        "correct_index": correct_index,
-        "labels_ar": labels_ar,
-        "prompt": prompt_ar,
-        "meta": meta
+        "correct_index": choices.index(correct_img),
+        "rule_desc": rule_desc,
+        "prompt": "Which option completes the 3x3 matrix?",
+        "meta": {"type": "matrix"}
     }
 
-# ---------------- Streamlit UI ----------------
-st.set_page_config(page_title="Paper Folding — Canonical Dimensions", layout="wide")
-st.title("Paper Folding — Canonical Dimensions (Single Fold)")
+# ----------------------------
+# Streamlit UI
+# ----------------------------
+
+st.set_page_config(page_title="Matrix (Mimic Sample)", layout="wide")
+st.title("Matrix Reasoning (3x3)")
 
 with st.sidebar:
     st.header("Controls")
+    difficulty = st.select_slider("Difficulty", options=["Easy","Medium","Hard"], value="Medium")
     seed_str = st.text_input("Seed (optional)", value="")
-    seed = int(seed_str.strip()) if seed_str.strip().isdigit() else (abs(hash(seed_str)) % (2**31) if seed_str.strip() else None)
-
-    st.header("Visual Style")
+    seed = None
+    if seed_str.strip():
+        try:
+            seed = int(seed_str.strip())
+        except Exception:
+            seed = abs(hash(seed_str)) % (2**31)
+    st.header("Style")
     bg_hex = st.text_input("Background", "#FFFFFF")
-    paper_hex = st.text_input("Paper fill", "#FAFAFA")
-    outline_hex = st.text_input("Outline", "#1A1A1A")
-    fold_line_hex = st.text_input("Fold-line (dots)", "#3C3C3C")
+    outline_hex = st.text_input("Outline", "#141414")
+    text_hex = st.text_input("Text", "#141414")
+    stroke_w = st.number_input("Stroke width", min_value=2, max_value=12, value=4, step=1)
 
-    # Advanced (kept fixed internally so dimensions stay consistent)
-    st.caption("Dimensions are locked per question so all panels match.")
+    style = {
+        "bg": tuple(int(bg_hex.strip().lstrip("#")[i:i+2],16) for i in (0,2,4)) if len(bg_hex.strip().lstrip("#")) in (3,6) else (255,255,255),
+        "outline": tuple(int(outline_hex.strip().lstrip("#")[i:i+2],16) for i in (0,2,4)) if len(outline_hex.strip().lstrip("#")) in (3,6) else (20,20,20),
+        "text_color": tuple(int(text_hex.strip().lstrip("#")[i:i+2],16) for i in (0,2,4)) if len(text_hex.strip().lstrip("#")) in (3,6) else (30,30,30),
+        "stroke_width": int(stroke_w)
+    }
+
+    st.header("Mimic from Sample (optional)")
+    sample_bytes = None
+    file_up = st.file_uploader("Upload image to mimic palette", type=["png","jpg","jpeg"], accept_multiple_files=False)
+    if file_up:
+        sample_bytes = file_up.getvalue()
+
+    st.markdown("---")
     gen_btn = st.button("Generate New Question", type="primary", use_container_width=True)
 
     st.subheader("Batch")
-    batch_n = st.number_input("How many?", min_value=2, max_value=100, value=8, step=1)
+    batch_n = st.number_input("How many to generate", min_value=2, max_value=100, value=10, step=1)
     batch_btn = st.button("Generate Batch ZIP", use_container_width=True)
-
-style = {
-    "bg": _hex_to_rgb(bg_hex),
-    "paper_fill": _hex_to_rgb(paper_hex),
-    "outline": _hex_to_rgb(outline_hex),
-    "fold_line": _hex_to_rgb(fold_line_hex),
-}
 
 rng = make_rng(seed)
 
 def make_one():
-    return generate_single_fold_question(rng, style=style)
+    local_style = style.copy()
+    if sample_bytes:
+        try:
+            im = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
+            ext = extract_style_from_image(im)
+            local_style["fills"] = ext.get("fills")
+        except Exception:
+            pass
+    pack = generate_matrix_reasoning(rng, difficulty=difficulty, style=local_style)
+    problem = compose_grid(pack["grid_imgs"], pack["grid_size"])
+    return {
+        "problem_img": problem,
+        "choices_imgs": pack["choices_imgs"],
+        "correct_index": pack["correct_index"],
+        "prompt": pack["prompt"],
+        "rule_desc": pack["rule_desc"]
+    }
 
-if ("fold_qpack" not in st.session_state) or gen_btn:
-    st.session_state.fold_qpack = make_one()
+if ("mx_qpack" not in st.session_state) or gen_btn:
+    st.session_state.mx_qpack = make_one()
 
-qp = st.session_state.get("fold_qpack")
-
+qp = st.session_state.get("mx_qpack")
 if qp:
-    grid = compose_2x2_grid(qp["choices_imgs"], qp["labels_ar"], pad=24, bg=style["bg"])
-    composite = stack_vertical(qp["problem_img"], grid, pad=28, bg=style["bg"])
+    colQ, colA = st.columns([2.1, 1.4])
+    with colQ:
+        st.subheader("Question")
+        show_image(qp["problem_img"])
+        st.write(qp["prompt"])
+    with colA:
+        st.subheader("Choices")
+        labels = [chr(ord('A') + i) for i in range(len(qp["choices_imgs"]))]
+        chosen = st.radio("Select your answer:", labels, index=0, horizontal=True, label_visibility="collapsed")
+        cols2 = st.columns(2)
+        for i, im in enumerate(qp["choices_imgs"]):
+            with cols2[i % 2]:
+                show_image(im, caption="Option " + labels[i])
+        if st.button("Check answer"):
+            if chosen == labels[qp["correct_index"]]:
+                st.success("Correct. Answer: " + labels[qp["correct_index"]])
+            else:
+                st.error("Not quite. Correct answer: " + labels[qp["correct_index"]])
+            st.markdown("Why: " + qp["rule_desc"])
 
-    st.subheader("Question")
-    st.write(qp["prompt"])   # Arabic outside images for proper RTL
-    show_image(composite)
-
-    chosen = st.radio("Pick your answer:", qp["labels_ar"], index=0, horizontal=True)
-    if st.button("Check answer"):
-        correct_label = qp["labels_ar"][qp["correct_index"]]
-        st.success(f"الإجابة الصحيحة: {correct_label}") if chosen == correct_label else st.error(f"غير صحيح. الإجابة الصحيحة: {correct_label}")
-
-    st.markdown("---"); st.subheader("Export")
+    st.markdown("---")
+    st.subheader("Export")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG"); zf.writestr("problem.png", pb.getvalue())
+        pb = io.BytesIO(); qp["problem_img"].save(pb, format="PNG")
+        zf.writestr("problem.png", pb.getvalue())
+        labels = [chr(ord('A') + i) for i in range(len(qp["choices_imgs"]))]
         for i, im in enumerate(qp["choices_imgs"]):
-            cb = io.BytesIO(); im.save(cb, format="PNG"); zf.writestr(f"choice_{qp['labels_ar'][i]}.png", cb.getvalue())
-        gb = io.BytesIO(); grid.save(gb, format="PNG"); zf.writestr("grid.png", gb.getvalue())
-        qb = io.BytesIO(); composite.save(qb, format="PNG"); zf.writestr("question.png", qb.getvalue())
+            cb = io.BytesIO(); im.save(cb, format="PNG")
+            zf.writestr("choice_%s.png" % labels[i], cb.getvalue())
         meta = {
-            "type": qp["meta"]["type"], "direction": qp["meta"]["direction"],
-            "axis": qp["meta"]["axis"], "half": qp["meta"]["half"],
-            "shapes_half": qp["meta"]["shapes_half"],
-            "prompt": qp["prompt"], "labels": qp["labels_ar"],
-            "correct_label": qp["labels_ar"][qp["correct_index"]],
+            "type": "matrix",
+            "correct_label": labels[qp["correct_index"]],
+            "rule": qp["rule_desc"]
         }
-        zf.writestr("question.json", json.dumps(meta, indent=2, ensure_ascii=False))
-
+        zf.writestr("question.json", json.dumps(meta, indent=2))
     st.download_button("Download ZIP", data=buf.getvalue(),
-                       file_name=f"folding_canonical_{int(time.time())}.zip",
-                       mime="application/zip")
+                       file_name="matrix_%d.zip" % int(time.time()), mime="application/zip")
 
     if batch_btn:
         bbuf = io.BytesIO()
         with zipfile.ZipFile(bbuf, "w", zipfile.ZIP_DEFLATED) as zf:
             index = []
             for k in range(int(batch_n)):
-                local_rng = make_rng((seed or 0) + k + 1)
-                local_pack = generate_single_fold_question(local_rng, style=style)
-                qid = f"folding_canonical_{int(time.time()*1000)}_{k}"
-
-                local_grid = compose_2x2_grid(local_pack["choices_imgs"], local_pack["labels_ar"], pad=24, bg=style["bg"])
-                local_composite = stack_vertical(local_pack["problem_img"], local_grid, pad=28, bg=style["bg"])
-
-                pb = io.BytesIO(); local_pack["problem_img"].save(pb, format="PNG"); zf.writestr(f"{qid}/problem.png", pb.getvalue())
-                for i, im in enumerate(local_pack["choices_imgs"]):
-                    cb = io.BytesIO(); im.save(cb, format="PNG"); zf.writestr(f"{qid}/choice_{local_pack['labels_ar'][i]}.png", cb.getvalue())
-                gb = io.BytesIO(); local_grid.save(gb, format="PNG"); zf.writestr(f"{qid}/grid.png", gb.getvalue())
-                qb = io.BytesIO(); local_composite.save(qb, format="PNG"); zf.writestr(f"{qid}/question.png", qb.getvalue())
-
+                rng_local = make_rng((seed or 0) + k + 1)
+                # reuse current style; mimic fills again if provided
+                loc_style = style.copy()
+                if sample_bytes:
+                    try:
+                        im = Image.open(io.BytesIO(sample_bytes)).convert("RGB")
+                        ext = extract_style_from_image(im)
+                        loc_style["fills"] = ext.get("fills")
+                    except Exception:
+                        pass
+                pack = generate_matrix_reasoning(rng_local, difficulty=difficulty, style=loc_style)
+                qid = "matrix_%d_%d" % (int(time.time()*1000), k)
+                pb = io.BytesIO(); compose_grid(pack["grid_imgs"], pack["grid_size"]).save(pb, format="PNG")
+                zf.writestr("%s/problem.png" % qid, pb.getvalue())
+                labels = [chr(ord('A') + i) for i in range(len(pack["choices_imgs"]))]
+                for i, im in enumerate(pack["choices_imgs"]):
+                    cb = io.BytesIO(); im.save(cb, format="PNG")
+                    zf.writestr("%s/choice_%s.png" % (qid, labels[i]), cb.getvalue())
                 meta = {
-                    "id": qid, "type": local_pack["meta"]["type"],
-                    "direction": local_pack["meta"]["direction"], "axis": local_pack["meta"]["axis"],
-                    "half": local_pack["meta"]["half"], "shapes_half": local_pack["meta"]["shapes_half"],
-                    "prompt": local_pack["prompt"], "labels": local_pack["labels_ar"],
-                    "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
+                    "id": qid,
+                    "type": "matrix",
+                    "correct_label": labels[pack["correct_index"]],
+                    "rule": pack["rule_desc"]
                 }
-                zf.writestr(f"{qid}/question.json", json.dumps(meta, indent=2, ensure_ascii=False))
+                zf.writestr("%s/question.json" % qid, json.dumps(meta, indent=2))
                 index.append(meta)
-            zf.writestr("index.json", json.dumps(index, indent=2, ensure_ascii=False))
-
+            zf.writestr("index.json", json.dumps(index, indent=2))
         st.download_button("Download Batch ZIP", data=bbuf.getvalue(),
-                           file_name=f"batch_folding_canonical_{int(time.time())}.zip",
+                           file_name="batch_matrix_%d.zip" % int(time.time()),
                            mime="application/zip")
