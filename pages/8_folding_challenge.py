@@ -5,8 +5,8 @@
 # Directions fixed to match exam references:
 # - Vertical fold: Right → Left  (L)  → landscape paper
 # - Horizontal fold: Bottom → Top (U) → square paper
-# Left tile = folded reference (other half dotted), shapes on folding half.
-# Right tile = plain paper with fold line + arrow that CROSSES the dotted line.
+# LEFT tile = folded reference (NOW dots the FOLDING half itself).
+# RIGHT tile = plain paper with fold line + arrow that CROSSES the dotted line.
 # Uniform tile size within each question; choices have no extra outer box.
 
 import io, time, math, random, zipfile, json
@@ -136,7 +136,7 @@ def paper_rect_on_canvas(W: int, H: int, ratio: float) -> Tuple[int,int,int,int]
     m = int(0.09 * min(W, H))
     max_w = W - 2*m
     max_h = H - 2*m
-    # try to use full width first
+    # try full width first
     pw = max_w
     ph = int(round(pw / ratio))
     if ph > max_h:
@@ -157,7 +157,7 @@ def draw_example(direction: str,
     TW, TH = [d * DPI for d in tile_size]
     pad = int(18 * DPI)
 
-    # Left tile: folded reference (one paper; other half dotted)
+    # Left tile: folded reference (one paper; FOLDING half dotted)  <-- CHANGED
     left = Image.new("RGB", (TW, TH), bg)
     pl, pt, pr, pb = paper_rect_on_canvas(TW, TH, ratio)
     ld = ImageDraw.Draw(left)
@@ -165,9 +165,8 @@ def draw_example(direction: str,
     rounded_rect(ld, (pl, pt, pr, pb), 14, paper_fill, outline, 6)
 
     axis, fold_half = dir_to_axis_and_half(direction)
-    other_half = {"left":"right","right":"left","top":"bottom","bottom":"top"}[fold_half]
 
-    # dotted the NON-folding half inside the same paper
+    # dotted the FOLDING half (bottom for U; right for L)
     def dotted_half(rect, axis, half):
         l,t,r,b = rect; cx=(l+r)//2; cy=(t+b)//2
         if axis=="V":
@@ -183,7 +182,7 @@ def draw_example(direction: str,
             ld.line([(x0+8,y),(x0+8,y+8)], fill=fold_line_color, width=3)
             ld.line([(x1-8,y),(x1-8,y+8)], fill=fold_line_color, width=3)
 
-    dotted_half((pl,pt,pr,pb), axis, other_half)
+    dotted_half((pl,pt,pr,pb), axis, fold_half)   # <-- dot folding half now
 
     # shapes on the folding half only
     for shp,(sx,sy) in shapes_half:
@@ -270,21 +269,20 @@ def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None
     outline     = (style.get("outline") if style else None) or (20,20,20)
     fold_color  = (style.get("fold_line") if style else None) or (60,60,60)
 
-    # Choose axis randomly but clamp directions you requested
+    # Choose axis randomly; directions clamped (R→L or Bottom→Top)
     axis_choice = rng.choice(["V","H"])
-    direction   = "L" if axis_choice=="V" else "U"  # R→L or Bottom→Top
+    direction   = "L" if axis_choice=="V" else "U"
     axis, shaded_half = dir_to_axis_and_half(direction)
 
-    # Tile size and paper ratio depend on axis
+    # Tile size & paper ratio by axis
     tile_size = get_tile_size(axis)      # (W,H)
     ratio     = 2.3 if axis=="V" else 1.0
 
-    # Sample two shapes on the FOLDING half (fix: correct sign for y!)
+    # Sample two shapes on the FOLDING half (right for L, bottom for U)
     def sample_point_on_half():
         x = rng.uniform(-0.85, 0.85)
         y = rng.uniform(-0.70, 0.70)
         if axis == "V":
-            # x<0 is left, x>0 is right
             x = rng.uniform(-0.85, -0.12) if shaded_half == "left" else rng.uniform(0.12, 0.85)
         else:  # axis == "H"  (y>0 is TOP, y<0 is BOTTOM)
             y = rng.uniform(0.12, 0.85) if shaded_half == "top" else rng.uniform(-0.85, -0.12)
@@ -300,18 +298,17 @@ def generate_single_fold_question(rng: random.Random, style: Optional[Dict]=None
     shapes = ["circle","triangle"]; rng.shuffle(shapes)
     shapes_half = [(shapes[0], pts[0]), (shapes[1], pts[1])]
 
-    # Correct answer = shapes mirrored about the fold axis (true reflection)
+    # Correct answer = true mirror across the fold axis
     mirrored = [(s, reflect_point(p, axis)) for s,p in shapes_half]
     shapes_correct = shapes_half + mirrored
 
     # Distractors
     wrong_axis = "H" if axis=="V" else "V"
     shapes_wrong1 = list(shapes_half)  # no reflection
-    shapes_wrong2 = shapes_half + [(s, reflect_point(p, wrong_axis)) for s,p in shapes_half]  # wrong axis
+    shapes_wrong2 = shapes_half + [(s, reflect_point(p, wrong_axis)) for s,p in shapes_half]
     swap = {"circle":"triangle","triangle":"circle"}
-    shapes_wrong3 = shapes_half + [(swap[s], reflect_point(p, axis)) for s,p in shapes_half]   # wrong shape + right axis
+    shapes_wrong3 = shapes_half + [(swap[s], reflect_point(p, axis)) for s,p in shapes_half]
 
-    # Render choices with the right tile size/ratio for this question
     c0 = draw_choice(shapes_correct, tile_size, ratio, bg, paper_fill, outline)
     c1 = draw_choice(shapes_wrong1,  tile_size, ratio, bg, paper_fill, outline)
     c2 = draw_choice(shapes_wrong2,  tile_size, ratio, bg, paper_fill, outline)
@@ -444,7 +441,7 @@ if qp:
                     "half": local_pack["meta"]["half"],
                     "ratio": local_pack["meta"]["ratio"],
                     "tile_size": local_pack["meta"]["tile_size"],
-                    "shapes_half": local_pack["meta"]["shapes_half"],
+                    "shapes_half": local_pack["shapes_half"],
                     "prompt": local_pack["prompt"],
                     "labels": local_pack["labels_ar"],
                     "correct_label": local_pack["labels_ar"][local_pack["correct_index"]],
