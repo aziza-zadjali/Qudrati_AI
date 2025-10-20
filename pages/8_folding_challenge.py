@@ -5,14 +5,15 @@
 # LEFT tile: folding half has dotted outer edges (3 sides); center fold line is SOLID.
 # Shapes are drawn on the VISIBLE (non-dotted) half.
 # RIGHT tile: plain paper, center dotted line, big curved arrow that crosses the line.
-# Choices: The correct answer shows BOTH the original shapes and their mirrored counterparts
-# after unfolding (double-print). Triangles are polygons AND are truly reflected.
+# Choices: Correct answer shows BOTH the original shapes and their mirrored counterparts (double-print).
+# Triangles are polygons (with small rotation) and are truly reflected vertex-by-vertex.
 # Difficulty:
 #   - Easy: clearer rotation, safer spacing; distractors are obviously wrong.
 #   - Hard: subtle rotation, tighter spacing; distractors are "near-miss" reflections
-#            (jittered/rotated mirrors) so the right answer isn't obvious.
+#           (jittered/rotated mirrors) so the right answer isn't obvious.
+# NEW: De-duplication step ensures no two answer tiles are identical.
 
-import io, time, math, random, zipfile, json
+import io, time, math, random, zipfile, json, hashlib
 from typing import List, Tuple, Optional, Dict
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -231,6 +232,9 @@ def style_folded_edges(draw: ImageDraw.ImageDraw, rect, axis: str, fold_half: st
             draw.line([(cx, t), (cx, b)], fill=outline_color, width=stroke)
 
 # -------------------------- example (two tiles) --------------------------
+def _rotate_triangle_points(pts, cx, cy, deg):
+    return [_rotate_point(x, y, cx, cy, deg) for (x, y) in pts]
+
 def draw_example(direction: str,
                  shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]],
                  tile_size: Tuple[int, int],
@@ -323,27 +327,50 @@ def reflect_entries(entries: List[Dict], rect, axis: str) -> List[Dict]:
 
 def jitter_entries(entries: List[Dict], axis: str, max_px: int, rng: random.Random) -> List[Dict]:
     # Shift mirrored entries slightly perpendicular to the fold axis (confuser)
-    dx = rng.randint(-max_px, max_px) if axis == "V" else 0
-    dy = rng.randint(-max_px, max_px) if axis == "H" else 0
+    if max_px <= 0:
+        return entries
+    # ensure non-zero jitter
+    def nz(n):
+        choices = [i for i in range(-n, n+1) if i != 0]
+        return rng.choice(choices)
+    dx = nz(max_px) if axis == "V" else 0
+    dy = nz(max_px) if axis == "H" else 0
     out = []
     for e in entries:
         cx, cy = e["center"]
-        new_e = {k: (v.copy() if isinstance(v, list) else v) for k, v in e.items()}
-        new_e["center"] = (cx + dx, cy + dy)
+        new_e = {"shape": e["shape"], "center": (cx + dx, cy + dy)}
         if e["shape"] == "triangle" and "poly" in e:
             new_e["poly"] = [(x + dx, y + dy) for (x, y) in e["poly"]]
-        out.append(new_e)
+        return out + [new_e] if False else out.append(new_e)
     return out
 
 def rotate_triangle_entry(e: Dict, deg: float) -> Dict:
     if e["shape"] != "triangle" or "poly" not in e:
         return e
     cx, cy = e["center"]
-    pts = e["poly"]
-    rpts = [_rotate_point(x, y, cx, cy, deg) for (x, y) in pts]
+    rpts = [_rotate_point(x, y, cx, cy, deg) for (x, y) in e["poly"]]
     return {"shape": "triangle", "center": (cx, cy), "poly": rpts}
 
-# -------------------------- generator --------------------------
+# -------------------------- rendering & hashing --------------------------
+def render_choice_image(entries: List[Dict],
+                        tile_size: Tuple[int, int], ratio: float,
+                        bg, paper_fill, outline) -> Image.Image:
+    TW, TH = [d * DPI for d in tile_size]
+    img = Image.new("RGB", (TW, TH), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
+    paper_shadow(img, (l, t, r, b))
+    rounded_rect(d, (l, t, r, b), 14, paper_fill, outline, 6)
+    # draw in canonical order (avoid order-only diffs)
+    entries_sorted = sorted(entries, key=lambda e: (e["shape"], round(e["center"][0]), round(e["center"][1])))
+    for en in entries_sorted:
+        draw_shape(d, en, color=outline, width=4, size_px=10*DPI)
+    return img  # NOTE: pre-resize; better for hashing
+
+def image_md5(img: Image.Image) -> str:
+    return hashlib.md5(img.tobytes()).hexdigest()
+
+# -------------------------- generator (with de-dup) --------------------------
 def generate_single_fold_question(rng: random.Random,
                                   style: Optional[Dict] = None,
                                   difficulty: str = "Easy") -> Dict:
@@ -362,159 +389,196 @@ def generate_single_fold_question(rng: random.Random,
         EDGE_MARGIN = 0.12
         MIN_SEP = 0.43
         TRI_ROT_RANGE = (-28, 28)  # more rotation -> easier to notice mirror
-        JITTER_PX = 0             # not used
-        MIRROR_TRI_ROT = 0        # not used
+        JITTER_PX = 0
+        ALT_ROT_SET = [12, -12, 15, -15]  # for swapped triangle if needed
     else:  # hard
         AXIS_MARGIN = 0.15
         EDGE_MARGIN = 0.12
         MIN_SEP = 0.36
         TRI_ROT_RANGE = (-12, 12)  # subtle rotation -> harder
-        JITTER_PX = 3              # small perpendicular jitter to mirrored half
-        MIRROR_TRI_ROT = rng.choice([-6, -5, 5, 6])  # small extra rotation for mirrored triangles in a distractor
+        JITTER_PX = 3              # guaranteed non-zero jitter via jitter_entries
+        ALT_ROT_SET = [5, -5, 6, -6, 7, -7]
 
-    # Random orientation
-    axis_choice = rng.choice(["V", "H"])
-    direction = "L" if axis_choice == "V" else "U"
-    axis, folding_half = dir_to_axis_and_half(direction)
+    # We'll allow a few full-regeneration attempts if dedup fails repeatedly
+    for outer_try in range(6):
+        # Random orientation
+        axis_choice = rng.choice(["V", "H"])
+        direction = "L" if axis_choice == "V" else "U"
+        axis, folding_half = dir_to_axis_and_half(direction)
 
-    # Tile size & paper ratio by axis
-    tile_size = get_tile_size(axis)
-    ratio = 2.3 if axis == "V" else 1.0
+        # Tile size & paper ratio by axis
+        tile_size = get_tile_size(axis)
+        ratio = 2.3 if axis == "V" else 1.0
 
-    # Visible half (opposite of the folding half)
-    visible_half = (
-        {"left": "right", "right": "left"}[folding_half] if axis == "V"
-        else {"top": "bottom", "bottom": "top"}[folding_half]
-    )
+        # Visible half (opposite of the folding half)
+        visible_half = (
+            {"left": "right", "right": "left"}[folding_half] if axis == "V"
+            else {"top": "bottom", "bottom": "top"}[folding_half]
+        )
 
-    def sample_point_on_half():
-        x = rng.uniform(-0.85, 0.85)
-        y = rng.uniform(-0.70, 0.70)
-        if axis == "V":
-            x = rng.uniform(-0.85, -AXIS_MARGIN) if visible_half == "left" else rng.uniform(AXIS_MARGIN, 0.85)
-            y = rng.uniform(-0.70, 0.70)
-        else:
-            y = rng.uniform(AXIS_MARGIN, 0.85) if visible_half == "top" else rng.uniform(-0.85, -AXIS_MARGIN)
+        def sample_point_on_half():
             x = rng.uniform(-0.85, 0.85)
-        x = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, x))
-        y = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, y))
-        return (round(x, 3), round(y, 3))
-
-    # Two shapes, spaced apart
-    pts = []
-    for _ in range(2):
-        p = sample_point_on_half(); tries = 0
-        while any(math.hypot(p[0]-q[0], p[1]-q[1]) < MIN_SEP for q in pts) and tries < 50:
-            p = sample_point_on_half(); tries += 1
-        pts.append(p)
-
-    # Pick shapes; ensure triangle appears frequently
-    shapes = ["circle", "triangle"]; rng.shuffle(shapes)
-
-    def tri_rot():
-        return rng.uniform(*TRI_ROT_RANGE)
-
-    shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]] = []
-    for i in range(2):
-        shp = shapes[i]
-        rot = tri_rot() if shp == "triangle" else 0.0
-        shapes_visible_norm.append((shp, pts[i], rot))
-
-    # Prepare pixel-space geometry on one canonical paper rect
-    TW, TH = [d * DPI for d in tile_size]
-    l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
-
-    # Visible entries (with triangles as polygons)
-    base_entries = build_visible_entries_px(shapes_visible_norm, (l, t, r, b), size_px=10*DPI)
-    # Exact mirror for the correct answer
-    mirrored_entries = reflect_entries(base_entries, (l, t, r, b), axis)
-
-    # --- Correct choice: BOTH sides after opening (originals + mirrored) ---
-    shapes_correct_entries = base_entries + mirrored_entries
-
-    wrong_axis = "H" if axis == "V" else "V"
-
-    # Distractors (depend on difficulty)
-    if diff == "easy":
-        # (1) Originals only (no reflection)
-        d1 = base_entries
-        # (2) Originals + wrong-axis reflection
-        d2 = base_entries + reflect_entries(base_entries, (l, t, r, b), wrong_axis)
-        # (3) Originals + correct-axis reflection with swapped shape types on mirror
-        def swap_entry(e: Dict) -> Dict:
-            if e["shape"] == "circle":
-                return {"shape": "triangle", "center": e["center"],
-                        "poly": make_triangle_poly(e["center"], size_px=10*DPI, rotation_deg=15)}
-            elif e["shape"] == "triangle":
-                return {"shape": "circle", "center": e["center"]}
+            y = rng.uniform(-0.70, 0.70)
+            if axis == "V":
+                x = rng.uniform(-0.85, -AXIS_MARGIN) if visible_half == "left" else rng.uniform(AXIS_MARGIN, 0.85)
+                y = rng.uniform(-0.70, 0.70)
             else:
-                return {"shape": "circle", "center": e["center"]}
-        swapped_mirror = [swap_entry(e) for e in mirrored_entries]
-        d3 = base_entries + swapped_mirror
-        distractors = [d1, d2, d3]
-    else:
-        # HARD:
-        # (1) Originals + near-correct mirror with slight perpendicular jitter
-        near_mirror = jitter_entries(mirrored_entries, axis, max_px=JITTER_PX, rng=rng)
-        d1 = base_entries + near_mirror
+                y = rng.uniform(AXIS_MARGIN, 0.85) if visible_half == "top" else rng.uniform(-0.85, -AXIS_MARGIN)
+                x = rng.uniform(-0.85, 0.85)
+            x = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, x))
+            y = max(-1 + EDGE_MARGIN, min(1 - EDGE_MARGIN, y))
+            return (round(x, 3), round(y, 3))
 
-        # (2) Originals + mirror but triangles on mirror rotated slightly (not a true reflection)
-        mir_rot = []
-        for e in mirrored_entries:
-            if e["shape"] == "triangle" and "poly" in e:
-                mir_rot.append(rotate_triangle_entry(e, MIRROR_TRI_ROT))
+        # Two shapes, spaced apart
+        pts = []
+        for _ in range(2):
+            p = sample_point_on_half(); tries = 0
+            while any(math.hypot(p[0]-q[0], p[1]-q[1]) < MIN_SEP for q in pts) and tries < 50:
+                p = sample_point_on_half(); tries += 1
+            pts.append(p)
+
+        shapes = ["circle", "triangle"]; rng.shuffle(shapes)
+        def tri_rot():
+            return rng.uniform(*TRI_ROT_RANGE)
+
+        shapes_visible_norm: List[Tuple[str, Tuple[float, float], float]] = []
+        for i in range(2):
+            shp = shapes[i]
+            rot = tri_rot() if shp == "triangle" else 0.0
+            shapes_visible_norm.append((shp, pts[i], rot))
+
+        # Prepare pixel-space geometry on one canonical paper rect
+        TW, TH = [d * DPI for d in tile_size]
+        l, t, r, b = paper_rect_on_canvas(TW, TH, ratio)
+
+        # Visible entries (with triangles as polygons)
+        base_entries = build_visible_entries_px(shapes_visible_norm, (l, t, r, b), size_px=10*DPI)
+        # Exact mirror for the correct answer
+        mirrored_entries = reflect_entries(base_entries, (l, t, r, b), axis)
+        correct_entries = base_entries + mirrored_entries
+
+        wrong_axis = "H" if axis == "V" else "V"
+
+        def make_distractors():
+            if diff == "easy":
+                # (1) Originals only (no reflection)
+                d1 = base_entries
+                # (2) Originals + wrong-axis reflection
+                d2 = base_entries + reflect_entries(base_entries, (l, t, r, b), wrong_axis)
+                # (3) Originals + correct-axis reflection with swapped shape types on mirror
+                swapped = []
+                for e in mirrored_entries:
+                    if e["shape"] == "circle":
+                        swapped.append({"shape": "triangle", "center": e["center"],
+                                        "poly": make_triangle_poly(e["center"], size_px=10*DPI,
+                                                                   rotation_deg=rng.choice(ALT_ROT_SET))})
+                    elif e["shape"] == "triangle":
+                        swapped.append({"shape": "circle", "center": e["center"]})
+                    else:
+                        swapped.append({"shape": "circle", "center": e["center"]})
+                d3 = base_entries + swapped
+                return [d1, d2, d3]
             else:
-                mir_rot.append(e)
-        d2 = base_entries + mir_rot
+                # HARD:
+                # (1) Originals + near-correct mirror with slight perpendicular jitter (non-zero)
+                def jitter(entries):
+                    # custom jitter to ensure non-zero
+                    if JITTER_PX <= 0: return entries
+                    # guaranteed non-zero perpendicular to axis
+                    # (reuse jitter_entries but ensure it returns proper list)
+                    dx_choices = [i for i in range(-JITTER_PX, JITTER_PX+1) if i != 0]
+                    dy_choices = [i for i in range(-JITTER_PX, JITTER_PX+1) if i != 0]
+                    if axis == "V":
+                        dx = rng.choice(dx_choices); dy = 0
+                    else:
+                        dx = 0; dy = rng.choice(dy_choices)
+                    out = []
+                    for e in entries:
+                        cx, cy = e["center"]
+                        ne = {"shape": e["shape"], "center": (cx + dx, cy + dy)}
+                        if e["shape"] == "triangle" and "poly" in e:
+                            ne["poly"] = [(x + dx, y + dy) for (x, y) in e["poly"]]
+                        out.append(ne)
+                    return out
 
-        # (3) Originals + wrong-axis reflection (still plausible)
-        d3 = base_entries + reflect_entries(base_entries, (l, t, r, b), wrong_axis)
-        distractors = [d1, d2, d3]
+                near_mirror = jitter(mirrored_entries)
+                d1 = base_entries + near_mirror
 
-    # Render choices
-    def draw_choice(entries):
-        img = Image.new("RGB", (TW, TH), (255, 255, 255))
-        d = ImageDraw.Draw(img)
-        l2, t2, r2, b2 = paper_rect_on_canvas(TW, TH, ratio)
-        paper_shadow(img, (l2, t2, r2, b2))
-        rounded_rect(d, (l2, t2, r2, b2), 14, paper_fill, outline, 6)
-        for en in entries:
-            draw_shape(d, en, color=outline, width=4, size_px=10*DPI)
-        return img.resize(tile_size, Image.LANCZOS) if DPI != 1 else img
+                # (2) Originals + mirror but triangles on mirror rotated slightly (not a true reflection)
+                mir_rot = []
+                rot_deg = rng.choice(ALT_ROT_SET)
+                for e in mirrored_entries:
+                    if e["shape"] == "triangle" and "poly" in e:
+                        mir_rot.append(rotate_triangle_entry(e, rot_deg))
+                    else:
+                        mir_rot.append(e)
+                d2 = base_entries + mir_rot
 
-    c0 = draw_choice(shapes_correct_entries)
-    c1 = draw_choice(distractors[0])
-    c2 = draw_choice(distractors[1])
-    c3 = draw_choice(distractors[2])
+                # (3) Originals + wrong-axis reflection (still plausible)
+                d3 = base_entries + reflect_entries(base_entries, (l, t, r, b), wrong_axis)
+                return [d1, d2, d3]
 
-    choices = [c0, c1, c2, c3]
-    random.shuffle(choices)
-    correct_index = choices.index(c0)
+        # ------------- DEDUP: regenerate distractors to guarantee uniqueness -------------
+        unique_ready = False
+        attempts = 0
+        choices_imgs = None
+        distractor_sets = None
+        while not unique_ready and attempts < 10:
+            attempts += 1
+            distractor_sets = make_distractors()
 
-    labels_ar = ["أ", "ب", "ج", "د"]
-    grid = compose_2x2_grid(choices, labels_ar, pad=18, bg=bg)
-    example = draw_example(direction, shapes_visible_norm, tile_size, ratio, bg, paper_fill, outline, fold_color)
+            # render pre-resize for hashing
+            img_correct = render_choice_image(correct_entries, tile_size, ratio, bg, paper_fill, outline)
+            img_d1 = render_choice_image(distractor_sets[0], tile_size, ratio, bg, paper_fill, outline)
+            img_d2 = render_choice_image(distractor_sets[1], tile_size, ratio, bg, paper_fill, outline)
+            img_d3 = render_choice_image(distractor_sets[2], tile_size, ratio, bg, paper_fill, outline)
 
-    prompt_ar = f"({ 'سهل' if diff=='easy' else 'صعب' }) ما رمز البديل الذي يُظهر الأشكال الأصلية مع انعكاسها الصحيح بعد فتح الورقة؟"
-    meta = {
-        "type": "folding_single_shapes_double_print",
-        "direction": direction,
-        "axis": axis,
-        "folding_half": folding_half,
-        "visible_half": visible_half,
-        "ratio": ratio,
-        "tile_size": tile_size,
-        "difficulty": diff,
-        "shapes_visible": shapes_visible_norm  # includes rotation for triangles
-    }
-    return {
-        "problem_img": example,
-        "choices_imgs": choices,
-        "correct_index": correct_index,
-        "labels_ar": labels_ar,
-        "prompt": prompt_ar,
-        "meta": meta
-    }
+            hashes = [image_md5(x) for x in [img_correct, img_d1, img_d2, img_d3]]
+            if len(set(hashes)) == 4:
+                unique_ready = True
+                # resize for final display
+                def finalize(img):
+                    return img.resize(tile_size, Image.LANCZOS) if DPI != 1 else img
+                choices_imgs = [finalize(img_correct), finalize(img_d1), finalize(img_d2), finalize(img_d3)]
+            # else: loop and remake distractors with fresh jitter/rotations
+
+        if not unique_ready:
+            # full resample
+            continue
+
+        labels_ar = ["أ", "ب", "ج", "د"]
+        # shuffle while preserving which one is correct
+        pairs = list(zip(["correct", "d1", "d2", "d3"], choices_imgs))
+        random.shuffle(pairs)
+        choices_imgs = [p[1] for p in pairs]
+        correct_index = [p[0] for p in pairs].index("correct")
+
+        grid = compose_2x2_grid(choices_imgs, labels_ar, pad=18, bg=bg)
+        example = draw_example(direction, shapes_visible_norm, tile_size, ratio, bg, paper_fill, outline, fold_color)
+
+        prompt_ar = f"({ 'سهل' if diff=='easy' else 'صعب' }) ما رمز البديل الذي يُظهر الأشكال الأصلية مع انعكاسها الصحيح بعد فتح الورقة؟"
+        meta = {
+            "type": "folding_single_shapes_double_print",
+            "direction": direction,
+            "axis": axis,
+            "folding_half": folding_half,
+            "visible_half": visible_half,
+            "ratio": ratio,
+            "tile_size": tile_size,
+            "difficulty": diff,
+            "shapes_visible": shapes_visible_norm  # includes rotation for triangles
+        }
+        return {
+            "problem_img": example,
+            "choices_imgs": choices_imgs,
+            "correct_index": correct_index,
+            "labels_ar": labels_ar,
+            "prompt": prompt_ar,
+            "meta": meta
+        }
+
+    # If we reach here, multiple full attempts failed (extremely unlikely) → fallback simple regen
+    return generate_single_fold_question(make_rng(None), style=style, difficulty=difficulty)
 
 # -------------------------- compose helpers --------------------------
 def overlay_label_below(tile: Image.Image, label: str, color=(20, 20, 20)) -> Image.Image:
